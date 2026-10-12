@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>0.1.0</Version>
+    <Description>Automatic startup patches for WolverineFx 6.49 RabbitMQ OAuth2 token refresh.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/VladZainullin/Osk.WolverineFx.RabbitMq.OAuth2.Patch</RepositoryUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WolverineFx.RabbitMQ" Version="[6.49.0]" />
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <ProjectReference Include="../Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <None Include="../Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator/bin/$(Configuration)/netstandard2.0/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests" />
+  </ItemGroup>
+</Project>

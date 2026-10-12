@@ -4,25 +4,26 @@ using Moq;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Wolverine.RabbitMQ.Internal;
-using Xunit;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests;
 
+// Harmony changes process-wide method state, so these tests run sequentially.
+[NotInParallel]
 public class PatchTests
 {
-    [Fact]
-    public void InstallsBothPatchesExactlyOnce()
+    [Test]
+    public async Task InstallsBothPatchesExactlyOnce()
     {
         RabbitMqOAuth2Patches.Install();
         RabbitMqOAuth2Patches.Install();
         var create = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), "CreateConnectionAsync");
         var dispose = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), nameof(RabbitMqTransport.DisposeAsync));
-        Assert.Single(Harmony.GetPatchInfo(create)!.Postfixes, p => p.owner == RabbitMqOAuth2Patches.HarmonyId);
-        Assert.Single(Harmony.GetPatchInfo(dispose)!.Prefixes, p => p.owner == RabbitMqOAuth2Patches.HarmonyId);
-        Assert.Single(Harmony.GetPatchInfo(dispose)!.Postfixes, p => p.owner == RabbitMqOAuth2Patches.HarmonyId);
+        await Assert.That(Harmony.GetPatchInfo(create)!.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
+        await Assert.That(Harmony.GetPatchInfo(dispose)!.Prefixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
+        await Assert.That(Harmony.GetPatchInfo(dispose)!.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
     }
 
-    [Fact]
+    [Test]
     public async Task CreatedConnectionRefreshesAndPatchedTransportDisposalStopsWorker()
     {
         RabbitMqOAuth2Patches.Install();
@@ -38,15 +39,15 @@ public class PatchTests
         var original = Task.FromResult(connection.Object);
         RabbitMqConnectionPatch.Postfix(transport, ref original);
         var result = await original;
-        Assert.Same(connection.Object, result);
-        Assert.Equal("new-token", await updated.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Assert.That(result).IsSameReferenceAs(connection.Object);
+        await Assert.That(await updated.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("new-token");
         await transport.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Once);
         connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<RabbitMQ.Client.Events.AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
     }
 
-    [Fact]
-    public void PasswordOnlyConnectionIsNotWrapped()
+    [Test]
+    public async Task PasswordOnlyConnectionIsNotWrapped()
     {
         var transport = new RabbitMqTransport("rabbitmq");
         typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
@@ -54,21 +55,23 @@ public class PatchTests
         var original = Task.FromResult(new Mock<IConnection>().Object);
         var result = original;
         RabbitMqConnectionPatch.Postfix(transport, ref result);
-        Assert.Same(original, result);
+        await Assert.That((object)result).IsSameReferenceAs(original);
     }
 
-    [Fact]
+    [Test]
     public async Task FailedConnectionDoesNotRequestCredentials()
     {
         var provider = Provider("token");
         var failure = new InvalidOperationException("connection failed");
-        var actual = await Assert.ThrowsAsync<InvalidOperationException>(() => RabbitMqConnectionPatch.RegisterAsync(
-            Task.FromException<IConnection>(failure), new RabbitMqTransport("rabbitmq"), provider.Object));
-        Assert.Same(failure, actual);
+        var actual = await Assert.That(async () =>
+            await RabbitMqConnectionPatch.RegisterAsync(
+                Task.FromException<IConnection>(failure), new RabbitMqTransport("rabbitmq"), provider.Object))
+            .ThrowsExactly<InvalidOperationException>();
+        await Assert.That(actual).IsSameReferenceAs(failure);
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
+    [Test]
     public async Task EmptyTokenIsNotSentAndCancellationEndsRetryDelay()
     {
         var connection = new Mock<IConnection>();

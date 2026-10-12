@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/StartupSmoke/StartupSmoke.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator.csproj" />
+    <Project Path="src/Osk.WolverineFx.RabbitMq.OAuth2.Patch/Osk.WolverineFx.RabbitMq.OAuth2.Patch.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests.csproj" />
+  </Folder>
+</Solution>

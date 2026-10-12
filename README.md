@@ -17,15 +17,16 @@ NuGet-библиотека для WolverineFx.RabbitMQ **6.49.0** и прило�
 ## Разработка
 
 ```sh
-dotnet build src/Osk.WolverineFx.RabbitMq.OAuth2.Patch -c Release
+dotnet build Osk.WolverineFx.RabbitMq.OAuth2.Patch.slnx -c Release
+dotnet run --project samples/StartupSmoke -c Release
 dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests -c Release
 dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2.Patch -c Release -o artifacts
 bash tools/verify-package-consumer.sh
-dotnet restore samples/StartupSmoke --source ./artifacts --source https://api.nuget.org/v3/index.json
-dotnet run --project samples/StartupSmoke -c Release --no-restore
 ```
 
 SDK и тестовый runner Microsoft Testing Platform закреплены в `global.json`; тесты используют TUnit. Настройки компилятора находятся в `Directory.Build.props`, версии зависимостей — в `Directory.Packages.props`. Они относятся к разработке этого репозитория. Потребителю не нужно копировать эти файлы.
+
+Пример `samples/StartupSmoke` ссылается на проекты библиотеки и генератора, поэтому решение собирается до публикации пакета. Ссылка на генератор подключена как analyzer, чтобы проверить автоматическую установку патчей при работе с исходниками.
 
 `tools/verify-package-consumer.sh` создаёт отдельный проект вне репозитория и подключает собранный пакет обычной ссылкой `PackageReference`. Проверка использует новый NuGet-кэш и подтверждает установку обоих патчей до `Main`.
 

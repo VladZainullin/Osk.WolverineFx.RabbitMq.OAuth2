@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch" />
+    <ProjectReference Include="../../src/Osk.WolverineFx.RabbitMq.OAuth2.Patch/Osk.WolverineFx.RabbitMq.OAuth2.Patch.csproj" />
+    <ProjectReference Include="../../src/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>
 </Project>

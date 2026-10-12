@@ -8,6 +8,5 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
     <PackageVersion Include="TUnit" Version="1.74.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
-    <PackageVersion Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch" Version="0.1.0" />
   </ItemGroup>
 </Project>

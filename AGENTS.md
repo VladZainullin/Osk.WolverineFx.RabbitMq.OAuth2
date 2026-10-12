@@ -17,12 +17,16 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 Run from the repository root:
 
 ```sh
+dotnet build Osk.WolverineFx.RabbitMq.OAuth2.Patch.slnx -c Release
+dotnet run --project samples/StartupSmoke -c Release
 dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests -c Release
 dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2.Patch -c Release -o artifacts
 bash tools/verify-package-consumer.sh
 ```
 
 Tests use TUnit and the Microsoft Testing Platform runner selected in global.json. Preserve the `--project` option for .NET 10 MTP commands; do not add xUnit or VSTest adapters. Process-wide Harmony registration tests must remain nonparallel.
+
+The in-repository smoke example references the runtime project and the generator project (OutputItemType=Analyzer, ReferenceOutputAssembly=false). Keep solution builds independent of this unpublished package. The separate consumer verification script must retain its PackageReference to validate the actual NuGet artifact.
 
 The verification script builds a consumer outside this checkout with an isolated NuGet cache stored outside its source directory. It must print `PASS: NuGet generator installed both Harmony patches before Main.` without calling Install explicitly or inheriting repository props files.
 

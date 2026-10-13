@@ -37,7 +37,7 @@ public class PatchTests
         typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
             .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
         var original = Task.FromResult(connection.Object);
-        RabbitMqConnectionPatch.Postfix(transport, ref original);
+        RabbitMqTransportCreateConnectionAsyncPatch.Postfix(transport, ref original);
         var result = await original;
         await Assert.That(result).IsSameReferenceAs(connection.Object);
         await Assert.That(await updated.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("new-token");
@@ -54,7 +54,7 @@ public class PatchTests
             .SetValue(transport, new ConnectionFactory { CredentialsProvider = new BasicCredentialsProvider("basic", "user", "password") });
         var original = Task.FromResult(new Mock<IConnection>().Object);
         var result = original;
-        RabbitMqConnectionPatch.Postfix(transport, ref result);
+        RabbitMqTransportCreateConnectionAsyncPatch.Postfix(transport, ref result);
         await Assert.That((object)result).IsSameReferenceAs(original);
     }
 
@@ -64,7 +64,7 @@ public class PatchTests
         var provider = Provider("token");
         var failure = new InvalidOperationException("connection failed");
         var actual = await Assert.That(async () =>
-            await RabbitMqConnectionPatch.RegisterAsync(
+            await RabbitMqTransportCreateConnectionAsyncPatch.RegisterAsync(
                 Task.FromException<IConnection>(failure), new RabbitMqTransport("rabbitmq"), provider.Object))
             .ThrowsExactly<InvalidOperationException>();
         await Assert.That(actual).IsSameReferenceAs(failure);

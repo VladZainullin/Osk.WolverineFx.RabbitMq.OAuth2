@@ -6,7 +6,7 @@ using Wolverine.RabbitMQ.Internal;
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
 
 [HarmonyPatch]
-internal static class RabbitMqConnectionPatch
+internal static class RabbitMqTransportCreateConnectionAsyncPatch
 {
     private static MethodBase TargetMethod() =>
         AccessTools.DeclaredMethod(typeof(RabbitMqTransport), "CreateConnectionAsync", Type.EmptyTypes)

@@ -18,8 +18,8 @@ public static class RabbitMqOAuth2Patches
             var harmony = new Harmony(HarmonyId);
             try
             {
-                harmony.CreateClassProcessor(typeof(RabbitMqConnectionPatch)).Patch();
-                harmony.CreateClassProcessor(typeof(RabbitMqDisposePatch)).Patch();
+                harmony.CreateClassProcessor(typeof(RabbitMqTransportCreateConnectionAsyncPatch)).Patch();
+                harmony.CreateClassProcessor(typeof(RabbitMqTransportDisposeAsyncPatch)).Patch();
                 _installed = true;
             }
             catch

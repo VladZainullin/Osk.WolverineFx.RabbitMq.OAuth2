@@ -8,6 +8,7 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 - Use the existing checkout. Cloud tasks are isolated; do not create a Git worktree unless the user requests one.
 - Shared compiler settings belong in Directory.Build.props; dependency versions belong in Directory.Packages.props. Keep PackageReference versions out of repository project files.
 - Keep WolverineFx.RabbitMQ pinned to 6.49.0 until a compatibility change is requested and verified.
+- Name Harmony patch classes and their files using the target class name + target method name + Patch pattern (for example, RabbitMqTransportDisposeAsyncPatch).
 - Consumers must only need a normal PackageReference in their executable C# project. Do not require EmitCompilerGeneratedFiles, manual registration, or custom MSBuild imports for normal use.
 - Preserve the analyzer DLL under analyzers/dotnet/cs in the NuGet package. It must not become a runtime dependency.
 - Never log token values or introduce credentials into source files.

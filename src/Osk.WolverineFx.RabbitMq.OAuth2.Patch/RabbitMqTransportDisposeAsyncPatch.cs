@@ -4,7 +4,7 @@ using Wolverine.RabbitMQ.Internal;
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
 
 [HarmonyPatch(typeof(RabbitMqTransport), nameof(RabbitMqTransport.DisposeAsync))]
-internal static class RabbitMqDisposePatch
+internal static class RabbitMqTransportDisposeAsyncPatch
 {
     [HarmonyPrefix]
     public static void Prefix(RabbitMqTransport __instance) => RabbitMqRefreshRegistry.TryCancel(__instance);

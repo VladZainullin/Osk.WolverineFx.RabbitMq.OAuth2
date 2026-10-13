@@ -24,6 +24,7 @@ dotnet run --project samples/StartupSmoke -c Release
 dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests -c Release
 dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2.Patch -c Release -o artifacts
 bash tools/verify-package-consumer.sh
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests -c Release
 ```
 
 Tests use TUnit and the Microsoft Testing Platform runner selected in global.json. Preserve the `--project` option for .NET 10 MTP commands; do not add xUnit or VSTest adapters. Process-wide Harmony registration tests must remain nonparallel.
@@ -32,4 +33,4 @@ The in-repository smoke example references the runtime project and the generator
 
 The verification script builds a consumer outside this checkout with an isolated NuGet cache stored outside its source directory. It must print `PASS: NuGet generator installed both Harmony patches before Main.` without calling Install explicitly or inheriting repository props files.
 
-Compilation covers net9.0 and net10.0; unit tests and the smoke consumer run on net10.0. Unit tests use mocked connections. Do not claim real RabbitMQ/OAuth2 integration is verified without running it against configured services. Do not publish to NuGet.org unless the user requests publication.
+Compilation covers net9.0 and net10.0; unit tests, integration tests and the smoke consumer run on net10.0. Unit tests use mocked connections. Integration tests require a local Docker Engine and pull pinned RabbitMQ/Keycloak images via Testcontainers; do not skip them silently when Docker is unavailable. Use generated test credentials and ephemeral CA trust, preserving TLS hostname/chain checks and JWT signature/audience checks. Worker completion diagnostics depend on the pinned OAuth2 2.0.0 private task field; review that helper when upgrading. Do not claim real RabbitMQ/OAuth2 integration is verified without a successful run. Do not publish to NuGet.org unless the user requests publication.

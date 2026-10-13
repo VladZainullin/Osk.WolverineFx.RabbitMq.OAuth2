@@ -4,10 +4,12 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="[6.49.0]" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="[6.49.0]" />
     <PackageVersion Include="RabbitMQ.Client.OAuth2" Version="2.0.0" />
     <PackageVersion Include="Lib.Harmony" Version="2.4.3" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
     <PackageVersion Include="TUnit" Version="1.74.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="Testcontainers" Version="4.16.0" />
   </ItemGroup>
 </Project>

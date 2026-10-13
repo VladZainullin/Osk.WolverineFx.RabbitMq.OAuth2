@@ -15,6 +15,7 @@
     <Project Path="src/Osk.WolverineFx.RabbitMq.OAuth2.Patch/Osk.WolverineFx.RabbitMq.OAuth2.Patch.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests.csproj" />
     <Project Path="tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests.csproj" />
   </Folder>
 </Solution>

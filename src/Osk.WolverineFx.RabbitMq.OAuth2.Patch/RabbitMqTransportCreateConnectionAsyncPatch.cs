@@ -1,17 +1,12 @@
-using System.Reflection;
 using HarmonyLib;
 using RabbitMQ.Client;
 using Wolverine.RabbitMQ.Internal;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
 
-[HarmonyPatch]
+[HarmonyPatch(typeof(RabbitMqTransport), "CreateConnectionAsync")]
 internal static class RabbitMqTransportCreateConnectionAsyncPatch
 {
-    private static MethodBase TargetMethod() =>
-        AccessTools.DeclaredMethod(typeof(RabbitMqTransport), "CreateConnectionAsync", Type.EmptyTypes)
-        ?? throw new MissingMethodException(typeof(RabbitMqTransport).FullName, "CreateConnectionAsync");
-
     [HarmonyPostfix]
     internal static void Postfix(RabbitMqTransport __instance, ref Task<IConnection> __result)
     {

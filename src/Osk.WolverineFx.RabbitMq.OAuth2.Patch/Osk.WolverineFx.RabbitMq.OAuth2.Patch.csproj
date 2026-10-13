@@ -7,6 +7,12 @@
     <RepositoryUrl>https://github.com/VladZainullin/Osk.WolverineFx.RabbitMq.OAuth2.Patch</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="../../README.md"
+          Pack="true"
+          PackagePath="/"
+          Visible="false" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="RabbitMQ.Client.OAuth2" />
     <PackageReference Include="Lib.Harmony" />

@@ -3,7 +3,7 @@
 NuGet-библиотека для WolverineFx.RabbitMQ **6.49.0** и приложений .NET 9/10. Устанавливает два Harmony-патча автоматически при загрузке модуля приложения: после создания RabbitMQ-соединения запускает обновление OAuth2-токена, при остановке транспорта отменяет обновление и освобождает регистрацию.
 
 ```xml
-<PackageReference Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch" Version="0.1.0" />
+<PackageReference Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch" Version="6.49.0" />
 ```
 
 Для установки патчей достаточно этой ссылки на пакет в запускаемом C#-проекте. Дополнительные свойства MSBuild и вызовы регистрации не нужны. Source generator внутри пакета создаёт `ModuleInitializer`, вызывающий `RabbitMqOAuth2Patches.Install()` автоматически. Повторный вызов безопасен.

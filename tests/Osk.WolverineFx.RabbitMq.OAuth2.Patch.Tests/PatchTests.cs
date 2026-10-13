@@ -315,6 +315,32 @@ public class PatchTests
     }
 
     [Test]
+    public async Task AlreadyDisposedConnectionDoesNotPreventRefreshCleanup()
+    {
+        var connection = new Mock<IConnection>();
+        connection.SetupGet(x => x.IsOpen).Returns(false);
+        connection.SetupRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>())
+            .Throws(new ObjectDisposedException("AutorecoveringConnection"));
+        var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new Mock<ICredentialsProvider>();
+        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+            .Returns(async (CancellationToken ct) =>
+            {
+                using var callback = ct.Register(() => cancelled.TrySetResult());
+                requested.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
+            });
+
+        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+    }
+
+    [Test]
     public async Task ConcurrentDisposalsWaitForInFlightUpdateAndUnsubscribeOnce()
     {
         var connection = new Mock<IConnection>();

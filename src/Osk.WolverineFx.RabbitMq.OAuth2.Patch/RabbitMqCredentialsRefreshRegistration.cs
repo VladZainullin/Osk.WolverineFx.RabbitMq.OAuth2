@@ -28,10 +28,12 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         {
             lock (_sync)
             {
-                _disposeTask = Task.CompletedTask;
-                _connection.ConnectionShutdownAsync -= OnShutdownAsync;
-                try { _cts.Cancel(); }
-                finally { _cts.Dispose(); }
+                try { Cancel(); }
+                finally
+                {
+                    _disposeTask = Task.CompletedTask;
+                    _cts.Dispose();
+                }
             }
             throw;
         }
@@ -76,7 +78,12 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
     {
         lock (_sync)
         {
-            if (_disposeTask is null) _cts.Cancel();
+            if (_disposeTask is not null || _cts.IsCancellationRequested) return;
+            // The transport prefix calls this while the connection still permits event access.
+            // An externally disposed AutorecoveringConnection rejects event unsubscription.
+            try { _connection.ConnectionShutdownAsync -= OnShutdownAsync; }
+            catch (ObjectDisposedException) { }
+            _cts.Cancel();
         }
     }
 
@@ -86,7 +93,7 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         {
             if (_disposeTask is null)
             {
-                _cts.Cancel();
+                Cancel();
                 _disposeTask = Task.Run(DisposeRefresher);
             }
             return new ValueTask(_disposeTask);
@@ -101,7 +108,6 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
             ex.Flatten().InnerExceptions.All(e => e is OperationCanceledException)) { }
         finally
         {
-            _connection.ConnectionShutdownAsync -= OnShutdownAsync;
             _cts.Dispose();
         }
     }

@@ -6,37 +6,34 @@ using RabbitMQ.Client.OAuth2;
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
 
 // Binds the native refresh scheduler to a connection and the transport lifetime.
-internal sealed class RabbitMqCredentialsRefreshRegistration(
-    IConnection connection,
-    ICredentialsProvider provider,
-    ILogger logger) : IAsyncDisposable
+internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
 {
+    private readonly IConnection _connection;
+    private readonly ILogger _logger;
     private readonly Lock _sync = new();
     private readonly CancellationTokenSource _cts = new();
-    private CredentialsRefresher? _refresher;
+    private readonly CredentialsRefresher _refresher;
     private Task? _disposeTask;
 
-    public void Start()
+    public RabbitMqCredentialsRefreshRegistration(IConnection connection, ICredentialsProvider provider, ILogger logger)
     {
-        lock (_sync)
+        _connection = connection;
+        _logger = logger;
+        _connection.ConnectionShutdownAsync += OnShutdownAsync;
+        try
         {
-            ObjectDisposedException.ThrowIf(_disposeTask is not null, this);
-            if (_refresher is not null)
-                throw new InvalidOperationException("Credentials refresher has already started");
-
-            connection.ConnectionShutdownAsync += OnShutdownAsync;
-            try
+            _refresher = new CredentialsRefresher(provider, OnRefreshedAsync, _cts.Token);
+        }
+        catch
+        {
+            lock (_sync)
             {
-                _refresher = new CredentialsRefresher(provider, OnRefreshedAsync, _cts.Token);
-            }
-            catch
-            {
-                connection.ConnectionShutdownAsync -= OnShutdownAsync;
                 _disposeTask = Task.CompletedTask;
+                _connection.ConnectionShutdownAsync -= OnShutdownAsync;
                 try { _cts.Cancel(); }
                 finally { _cts.Dispose(); }
-                throw;
             }
+            throw;
         }
     }
 
@@ -51,27 +48,27 @@ internal sealed class RabbitMqCredentialsRefreshRegistration(
         if (ct.IsCancellationRequested) return;
         if (exception is not null)
         {
-            logger.LogError(exception, "RabbitMQ OAuth2 credentials refresh failed");
+            _logger.LogError(exception, "RabbitMQ OAuth2 credentials refresh failed");
             return;
         }
 
         if (credentials is null || string.IsNullOrWhiteSpace(credentials.Password))
         {
-            logger.LogError("RabbitMQ OAuth2 provider returned an empty token");
+            _logger.LogError("RabbitMQ OAuth2 provider returned an empty token");
             return;
         }
 
-        if (!connection.IsOpen) return;
+        if (!_connection.IsOpen) return;
         try
         {
-            await connection.UpdateSecretAsync(credentials.Password, "OAuth2 access token refresh", ct)
+            await _connection.UpdateSecretAsync(credentials.Password, "OAuth2 access token refresh", ct)
                 .ConfigureAwait(false);
-            logger.LogDebug("RabbitMQ OAuth2 token refreshed successfully");
+            _logger.LogDebug("RabbitMQ OAuth2 token refreshed successfully");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            logger.LogError(ex, "RabbitMQ OAuth2 connection token update failed");
+            _logger.LogError(ex, "RabbitMQ OAuth2 connection token update failed");
         }
     }
 
@@ -87,21 +84,25 @@ internal sealed class RabbitMqCredentialsRefreshRegistration(
     {
         lock (_sync)
         {
-            if (_disposeTask is not null) return new ValueTask(_disposeTask);
-            _cts.Cancel();
-            _disposeTask = Task.Run(() =>
+            if (_disposeTask is null)
             {
-                try { _refresher?.Dispose(); }
-                // OAuth2 2.0.0 throws an aggregate if cancellation interrupts its delay.
-                catch (AggregateException ex) when (_cts.IsCancellationRequested &&
-                    ex.Flatten().InnerExceptions.All(e => e is OperationCanceledException)) { }
-                finally
-                {
-                    connection.ConnectionShutdownAsync -= OnShutdownAsync;
-                    _cts.Dispose();
-                }
-            });
+                _cts.Cancel();
+                _disposeTask = Task.Run(DisposeRefresher);
+            }
             return new ValueTask(_disposeTask);
+        }
+    }
+
+    private void DisposeRefresher()
+    {
+        try { _refresher.Dispose(); }
+        // OAuth2 2.0.0 throws an aggregate if cancellation interrupts its delay.
+        catch (AggregateException ex) when (_cts.IsCancellationRequested &&
+            ex.Flatten().InnerExceptions.All(e => e is OperationCanceledException)) { }
+        finally
+        {
+            _connection.ConnectionShutdownAsync -= OnShutdownAsync;
+            _cts.Dispose();
         }
     }
 }

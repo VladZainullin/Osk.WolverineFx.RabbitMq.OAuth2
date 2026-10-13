@@ -86,7 +86,6 @@ public class PatchTests
             return Task.FromResult(new Credentials("oauth", "user", "", TimeSpan.FromMinutes(1)));
         });
         await using var refresher = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
-        refresher.Start();
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await refresher.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -122,7 +121,6 @@ public class PatchTests
                 "oauth", "user", $"token-{Interlocked.Increment(ref requests)}", TimeSpan.FromMilliseconds(150))));
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
-        registration.Start();
 
         await Assert.That(await firstUpdate.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("token-1");
         await Assert.That(await secondUpdate.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("token-2");
@@ -157,7 +155,6 @@ public class PatchTests
         var logger = new ErrorLogger();
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
-        registration.Start();
 
         await Assert.That(await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsSameReferenceAs(failure);
         await Assert.That(await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("recovered-token");
@@ -187,7 +184,6 @@ public class PatchTests
         var logger = new ErrorLogger();
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
-        registration.Start();
 
         await Assert.That(await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsSameReferenceAs(failure);
         await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -233,7 +229,6 @@ public class PatchTests
             });
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
-        registration.Start();
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         await connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
@@ -260,7 +255,6 @@ public class PatchTests
         var provider = Provider("token", TimeSpan.FromHours(1));
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
-        registration.Start();
         await updated.Task.WaitAsync(TimeSpan.FromSeconds(10));
         registration.Cancel();
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -288,10 +282,35 @@ public class PatchTests
             });
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
-        registration.Start();
         await nextRequest.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
+        connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Test]
+    public async Task FailedInitializationRemovesShutdownSubscription()
+    {
+        var connection = new Mock<IConnection>();
+        var failure = new InvalidOperationException("provider name unavailable");
+        var provider = new Mock<ICredentialsProvider>();
+        provider.SetupGet(x => x.Name).Throws(failure);
+        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+            .Returns(async (CancellationToken ct) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
+            });
+
+        var actual = await Assert.That(() => new RabbitMqCredentialsRefreshRegistration(
+            connection.Object, provider.Object, NullLogger.Instance)).ThrowsExactly<InvalidOperationException>();
+
+        await Assert.That(actual).IsSameReferenceAs(failure);
+        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+        // Moq returns null when the event has no subscribers after cleanup.
+        await (connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
+            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"))
+            ?? Task.CompletedTask);
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -313,7 +332,6 @@ public class PatchTests
             });
         var provider = Provider("token");
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
-        registration.Start();
 
         try
         {

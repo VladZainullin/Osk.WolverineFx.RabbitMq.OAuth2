@@ -21,9 +21,7 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_stopping, this);
-            var refresher = new RabbitMqCredentialsRefreshRegistration(connection, provider, logger);
-            refresher.Start();
-            _refreshers.Add(refresher);
+            _refreshers.Add(new RabbitMqCredentialsRefreshRegistration(connection, provider, logger));
         }
     }
 
@@ -54,7 +52,6 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
             _stopping = true;
             var refreshers = _refreshers.ToArray();
             _refreshers.Clear();
-            foreach (var refresher in refreshers) refresher.Cancel();
             _disposeTask = Task.WhenAll(refreshers.Select(x => x.DisposeAsync().AsTask()));
             return _disposeTask;
         }

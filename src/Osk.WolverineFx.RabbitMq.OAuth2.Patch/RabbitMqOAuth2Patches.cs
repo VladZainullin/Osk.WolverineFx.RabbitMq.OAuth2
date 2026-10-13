@@ -1,5 +1,4 @@
 using HarmonyLib;
-using Wolverine.RabbitMQ.Internal;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
 

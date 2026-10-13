@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="[6.49.0]" />
+    <PackageVersion Include="RabbitMQ.Client.OAuth2" Version="2.0.0" />
     <PackageVersion Include="Lib.Harmony" Version="2.4.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
     <PackageVersion Include="TUnit" Version="1.74.0" />

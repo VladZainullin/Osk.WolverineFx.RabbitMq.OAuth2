@@ -9,7 +9,8 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
 {
     private static readonly ConditionalWeakTable<RabbitMqTransport, RabbitMqRefreshRegistry> Registries = new();
     private readonly Lock _sync = new();
-    private readonly List<RabbitMqTokenRefresher> _refreshers = [];
+    private readonly List<RabbitMqCredentialsRefreshRegistration> _refreshers = [];
+    private Task? _disposeTask;
     private bool _stopping;
 
     public static RabbitMqRefreshRegistry For(RabbitMqTransport transport) =>
@@ -20,7 +21,7 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_stopping, this);
-            var refresher = new RabbitMqTokenRefresher(connection, provider, logger);
+            var refresher = new RabbitMqCredentialsRefreshRegistration(connection, provider, logger);
             refresher.Start();
             _refreshers.Add(refresher);
         }
@@ -28,7 +29,7 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
 
     public static void TryCancel(RabbitMqTransport transport)
     {
-        if (!Registries.TryGetValue(transport, out var registry)) return;
+        var registry = For(transport);
         lock (registry._sync)
         {
             registry._stopping = true;
@@ -36,23 +37,26 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
         }
     }
 
-    public static async ValueTask TryDisposeAsync(RabbitMqTransport transport)
+    public static ValueTask TryDisposeAsync(RabbitMqTransport transport)
     {
-        if (!Registries.TryGetValue(transport, out var registry)) return;
-        try { await registry.DisposeAsync().ConfigureAwait(false); }
-        finally { Registries.Remove(transport); }
+        // Keep a stopped entry so a late connection cannot restart refresh after shutdown.
+        // The weak transport key still permits collection of the registry.
+        return Registries.TryGetValue(transport, out var registry)
+            ? new ValueTask(registry.DisposeAsync())
+            : ValueTask.CompletedTask;
     }
 
-    private async ValueTask DisposeAsync()
+    private Task DisposeAsync()
     {
-        RabbitMqTokenRefresher[] refreshers;
         lock (_sync)
         {
+            if (_disposeTask is not null) return _disposeTask;
             _stopping = true;
-            refreshers = [.. _refreshers];
+            var refreshers = _refreshers.ToArray();
             _refreshers.Clear();
+            foreach (var refresher in refreshers) refresher.Cancel();
+            _disposeTask = Task.WhenAll(refreshers.Select(x => x.DisposeAsync().AsTask()));
+            return _disposeTask;
         }
-        foreach (var refresher in refreshers) refresher.Cancel();
-        await Task.WhenAll(refreshers.Select(x => x.DisposeAsync().AsTask())).ConfigureAwait(false);
     }
 }

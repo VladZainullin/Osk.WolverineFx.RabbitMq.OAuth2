@@ -12,6 +12,7 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 - Consumers must only need a normal PackageReference in their executable C# project. Do not require EmitCompilerGeneratedFiles, manual registration, or custom MSBuild imports for normal use.
 - Preserve the analyzer DLL under analyzers/dotnet/cs in the NuGet package. It must not become a runtime dependency.
 - Never log token values or introduce credentials into source files.
+- Use RabbitMQ.Client.OAuth2 CredentialsRefresher for refresh scheduling. The registration adapter only sends credentials to the connection and manages shutdown; do not introduce a second timer or refresh loop.
 
 ## Validation
 

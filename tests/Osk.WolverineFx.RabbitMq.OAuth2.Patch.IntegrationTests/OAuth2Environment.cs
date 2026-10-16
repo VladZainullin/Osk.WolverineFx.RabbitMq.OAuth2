@@ -1,6 +1,5 @@
-using System.Net;
+using System.Diagnostics;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using DotNet.Testcontainers.Builders;
@@ -12,6 +11,7 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
 internal sealed class OAuth2Environment : IAsyncDisposable
 {
     public const int TokenLifetimeSeconds = 8;
+    private readonly long _constructionStarted = Stopwatch.GetTimestamp();
     private readonly INetwork _network = new NetworkBuilder().Build();
     public TestTls Tls { get; } = new();
     private readonly string _adminPassword = Guid.NewGuid().ToString("N");
@@ -24,11 +24,8 @@ internal sealed class OAuth2Environment : IAsyncDisposable
 
     public OAuth2Environment()
     {
-        // Reserve a random fixed binding so Stop/Start keeps the OAuth2 client's endpoint stable.
-        using var portReservation = new TcpListener(IPAddress.Loopback, 0);
-        portReservation.Start();
-        var keycloakPort = ((IPEndPoint)portReservation.LocalEndpoint).Port;
-        portReservation.Stop();
+        Management.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"integration-admin:{_adminPassword}")));
 
         var realm = JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -66,7 +63,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
 
         Keycloak = new ContainerBuilder("quay.io/keycloak/keycloak:26.1.4")
             .WithNetwork(_network).WithNetworkAliases("keycloak")
-            .WithPortBinding(keycloakPort, 8443)
+            .WithPortBinding(8443, true)
             .WithEnvironment("KC_HOSTNAME", "https://keycloak:8443")
             .WithEnvironment("JAVA_OPTS_KC_HEAP", "-Xms128m -Xmx512m")
             .WithEnvironment("JAVA_OPTS_APPEND", "-XX:ActiveProcessorCount=2")
@@ -100,25 +97,21 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             .WithResourceMapping(Tls.CaPem, "/etc/rabbitmq/ca.crt")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server startup complete"))
             .Build();
+
+        WriteTiming("Fixture construction", _constructionStarted);
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
+            var networkStarted = Stopwatch.GetTimestamp();
             await _network.CreateAsync(ct);
-            await Keycloak.StartAsync(ct);
-            await WaitForKeycloakAsync(ct);
-            await RabbitMq.StartAsync(ct);
-            Management.BaseAddress = new Uri($"http://{RabbitMq.Hostname}:{RabbitMq.GetMappedPublicPort(15672)}/api/");
-            Management.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
-                Convert.ToBase64String(Encoding.UTF8.GetBytes($"integration-admin:{_adminPassword}")));
-            await WaitUntilAsync(async () =>
-                {
-                    using var response = await Management.GetAsync("overview", ct);
-                    return response.IsSuccessStatusCode;
-                },
-                TimeSpan.FromSeconds(30), ct);
+            WriteTiming("Network creation", networkStarted);
+            // RabbitMQ starts with in-network OAuth2 URLs. Authentication begins only after
+            // both the imported Keycloak realm and RabbitMQ management API are ready.
+            await Task.WhenAll(StartKeycloakAsync(ct), StartRabbitMqAsync(ct));
         }
         catch
         {
@@ -135,6 +128,39 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             await DisposeAsync();
             throw;
         }
+        finally { WriteTiming("Fixture startup", started); }
+    }
+
+    private async Task StartKeycloakAsync(CancellationToken ct)
+    {
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await Keycloak.StartAsync(ct);
+            await WaitForKeycloakAsync(ct);
+        }
+        finally { WriteTiming("Keycloak start and readiness", started); }
+    }
+
+    private async Task StartRabbitMqAsync(CancellationToken ct)
+    {
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await RabbitMq.StartAsync(ct);
+            Management.BaseAddress = new Uri($"http://{RabbitMq.Hostname}:{RabbitMq.GetMappedPublicPort(15672)}/api/");
+            await WaitUntilAsync(async () =>
+            {
+                try
+                {
+                    using var response = await Management.GetAsync("overview", ct);
+                    return response.IsSuccessStatusCode;
+                }
+                catch (HttpRequestException) { return false; }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return false; }
+            }, TimeSpan.FromSeconds(30), ct);
+        }
+        finally { WriteTiming("RabbitMQ start and readiness", started); }
     }
 
     public async Task<string[]> ConnectionIdsAsync(string connectionName)
@@ -155,6 +181,14 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         return json.RootElement.TryGetProperty("message_stats", out var stats) && stats.TryGetProperty("deliver_get", out var deliveries)
             ? deliveries.GetInt64() : 0;
+    }
+
+    public async Task<int> ConsumerCountAsync(string queue, CancellationToken ct)
+    {
+        using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", ct);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return json.RootElement.GetProperty("consumers").GetInt32();
     }
 
     public async Task WaitForKeycloakAsync(CancellationToken ct)
@@ -191,6 +225,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
+        var started = Stopwatch.GetTimestamp();
         Management.Dispose();
         try { await RabbitMq.DisposeAsync(); }
         finally
@@ -199,8 +234,15 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             finally
             {
                 try { await _network.DisposeAsync(); }
-                finally { Tls.Dispose(); }
+                finally
+                {
+                    Tls.Dispose();
+                    WriteTiming("Fixture disposal", started);
+                }
             }
         }
     }
+
+    private static void WriteTiming(string phase, long started) =>
+        Console.WriteLine($"[integration timing] {phase}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
 }

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,7 @@ internal sealed class WolverineSession : IAsyncDisposable
     private readonly OAuth2Environment _environment;
     private readonly IHost _host;
     private readonly DeliveryProbe _delivery = new();
+    private long _deliveredMessages;
     private bool _started;
     private Task? _disposeTask;
     public string ConnectionName { get; } = $"wolverine-oauth2-it-{Guid.NewGuid():N}";
@@ -42,6 +44,9 @@ internal sealed class WolverineSession : IAsyncDisposable
                 options.Services.AddSingleton(_delivery);
                 options.Discovery.DisableConventionalDiscovery();
                 options.Discovery.IncludeType<ProbeMessageHandler>();
+                // Invalid credentials stay invalid: fail after the first real broker
+                // rejection instead of Wolverine's twenty startup attempts, five seconds apart.
+                if (invalidToken) options.BrokerInitializationTimeout = TimeSpan.Zero;
                 options.UseRabbitMq(factory =>
                 {
                     factory.HostName = environment.RabbitMq.Hostname;
@@ -57,46 +62,70 @@ internal sealed class WolverineSession : IAsyncDisposable
 
     public static async Task<WolverineSession> CreateAsync(OAuth2Environment environment, bool invalidToken = false, CancellationToken ct = default)
     {
+        var started = Stopwatch.GetTimestamp();
         var handler = environment.Tls.CreateHandler();
+        WolverineSession? session = null;
         try
         {
             var oauth = await new OAuth2ClientBuilder("wolverine", environment.ClientSecret, tokenEndpoint: environment.TokenEndpoint)
                 .SetHttpClientHandler(handler).BuildAsync(ct);
-            return new WolverineSession(environment, oauth, handler, invalidToken);
+            return session = new WolverineSession(environment, oauth, handler, invalidToken);
         }
         catch { handler.Dispose(); throw; }
+        finally { WriteTiming("create", started, session?.ConnectionName); }
     }
 
     public async Task StartAsync(CancellationToken ct = default)
     {
+        var started = Stopwatch.GetTimestamp();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(45));
-        await _host.StartAsync(timeout.Token);
-        _started = true;
-        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(Log.Successes >= 2), TimeSpan.FromSeconds(15), ct);
+        try
+        {
+            await _host.StartAsync(timeout.Token);
+            _started = true;
+            await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(Log.Successes >= 2), TimeSpan.FromSeconds(15), ct);
+        }
+        finally { WriteTiming("start", started, ConnectionName); }
     }
 
-    public async Task SendAndReceiveAsync(CancellationToken ct = default)
+    public async Task SendAndReceiveAsync(CancellationToken ct = default, int messageCount = 1)
     {
-        var before = await _environment.DeliveredMessagesAsync(QueueName, ct);
-        var id = Guid.NewGuid();
-        var received = _delivery.Expect(id);
-        await _host.Services.GetRequiredService<IMessageBus>().PublishAsync(new ProbeMessage(id));
-        await received.WaitAsync(TimeSpan.FromSeconds(15), ct);
-        // Prove delivery went through RabbitMQ, even if local routing is accidentally enabled.
-        await OAuth2Environment.WaitUntilAsync(async () => await _environment.DeliveredMessagesAsync(QueueName, ct) > before,
-            TimeSpan.FromSeconds(15), ct);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(messageCount);
+        // The unique queue starts at zero and only this session publishes to it.
+        // Keep the last observed broker count instead of fetching it again before each send.
+        var before = _deliveredMessages;
+        for (var i = 0; i < messageCount; i++)
+        {
+            var id = Guid.NewGuid();
+            var received = _delivery.Expect(id);
+            await _host.Services.GetRequiredService<IMessageBus>().PublishAsync(new ProbeMessage(id));
+            await received.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        }
+        // Prove the whole batch went through RabbitMQ, even if local routing is accidentally enabled.
+        await OAuth2Environment.WaitUntilAsync(async () =>
+        {
+            var delivered = await _environment.DeliveredMessagesAsync(QueueName, ct);
+            if (delivered - before < messageCount) return false;
+            _deliveredMessages = delivered;
+            return true;
+        }, TimeSpan.FromSeconds(15), ct);
     }
 
-    public Task[] CaptureRefreshTasks()
+    public RefreshDiagnostics[] CaptureRefreshDiagnostics()
     {
         var transport = _host.Services.GetRequiredService<IWolverineRuntime>().Options.Transports.OfType<RabbitMqTransport>().Single();
         var registry = RabbitMqRefreshRegistry.For(transport);
-        // OAuth2 2.0.0 exposes no worker completion API. Read the pinned implementation
-        // only in this diagnostic so shutdown asserts actual task completion, not just silence.
-        return ReadField<List<RabbitMqCredentialsRefreshRegistration>>(registry, "_refreshers")
-            .Select(registration => ReadField<CredentialsRefresher>(registration, "_refresher"))
-            .Select(refresher => ReadField<Task>(refresher, "_refreshTask")).ToArray();
+        // OAuth2 2.0.0 exposes no worker completion API. Its worker awaits the
+        // refresh callback, including UpdateSecretAsync, so completion also rules
+        // out an in-flight secret update. Snapshot every registration under its lock.
+        lock (ReadField<Lock>(registry, "_sync"))
+        {
+            return ReadField<List<RabbitMqCredentialsRefreshRegistration>>(registry, "_refreshers")
+                .Select(registration => new RefreshDiagnostics(
+                    ReadField<Task>(ReadField<CredentialsRefresher>(registration, "_refresher"), "_refreshTask"),
+                    ReadField<IConnection>(registration, "_connection"))).ToArray();
+        }
     }
 
     private static T ReadField<T>(object instance, string name) =>
@@ -107,6 +136,7 @@ internal sealed class WolverineSession : IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
             if (_started)
@@ -127,19 +157,30 @@ internal sealed class WolverineSession : IAsyncDisposable
                 Credentials.Dispose();
                 (_oauthClient as IDisposable)?.Dispose();
                 _httpHandler.Dispose();
+                WriteTiming("dispose", started, ConnectionName);
             }
         }
     }
+
+    private static void WriteTiming(string stage, long started, string? connectionName) =>
+        Console.WriteLine($"[timing] session {connectionName ?? "creation failed"} {stage}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
 }
+
+internal sealed record RefreshDiagnostics(Task Worker, IConnection Connection);
 
 internal sealed class TrackingCredentialsProvider(OAuth2ClientCredentialsProvider inner, bool invalidToken) : ICredentialsProvider, IDisposable
 {
-    private int _requests, _active, _failures;
+    private int _requests, _active, _failures, _failTokenRequests;
     private readonly ConcurrentQueue<DateTimeOffset> _expirations = new();
     public string Name => inner.Name;
     public int Requests => Volatile.Read(ref _requests);
     public int ActiveRequests => Volatile.Read(ref _active);
     public int Failures => Volatile.Read(ref _failures);
+    public bool FailTokenRequests
+    {
+        get => Volatile.Read(ref _failTokenRequests) != 0;
+        set => Volatile.Write(ref _failTokenRequests, value ? 1 : 0);
+    }
     public DateTimeOffset FirstExpiration => _expirations.First();
 
     public async Task<Credentials> GetCredentialsAsync(CancellationToken cancellationToken = default)
@@ -148,7 +189,20 @@ internal sealed class TrackingCredentialsProvider(OAuth2ClientCredentialsProvide
         Interlocked.Increment(ref _active);
         try
         {
-            var credentials = await inner.GetCredentialsAsync(cancellationToken);
+            if (FailTokenRequests) throw new HttpRequestException("Simulated transient token endpoint failure.");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            Credentials credentials;
+            try
+            {
+                credentials = await inner.GetCredentialsAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+            {
+                // A stalled real endpoint is a retryable failure, not cancellation
+                // of the native refresh worker's lifetime.
+                throw new TimeoutException("Token endpoint did not respond within five seconds.");
+            }
             // Read expiry for the timing oracle; RabbitMQ independently validates signature/audience.
             var payload = credentials.Password.Split('.')[1].Replace('-', '+').Replace('_', '/');
             payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');

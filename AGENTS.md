@@ -16,6 +16,15 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 - Never log token values or introduce credentials into source files.
 - Use RabbitMQ.Client.OAuth2 CredentialsRefresher for refresh scheduling. The registration adapter only sends credentials to the connection and manages shutdown; do not introduce a second timer or refresh loop.
 
+## Mandatory formatting before every commit
+
+- Before every commit, Codex must run `dotnet format Osk.WolverineFx.RabbitMq.OAuth2.slnx` from the repository root. If the solution is renamed, use its actual filename.
+- After formatting, run `dotnet format Osk.WolverineFx.RabbitMq.OAuth2.slnx --verify-no-changes` (using the same actual solution filename) and require it to succeed before committing.
+- Include all changes made by formatting in the commit.
+- If formatting or verification fails, fix the cause and rerun both commands successfully before committing.
+- Never use `--no-verify` or any other means of bypassing established checks.
+- Codex must follow this rule during all subsequent work. Keep it in AGENTS.md; do not add Git hooks or third-party formatting tools.
+
 ## Validation
 
 Run from the repository root:

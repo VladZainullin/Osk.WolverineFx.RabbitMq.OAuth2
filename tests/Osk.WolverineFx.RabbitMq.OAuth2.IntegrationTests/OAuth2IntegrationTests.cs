@@ -23,23 +23,23 @@ public sealed class OAuth2IntegrationTests
     /// <summary>
     /// Создаёт общую инфраструктуру класса и ожидает готовности обоих сервисов.
     /// </summary>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для hook.</param>
     /// <returns>Задача запуска контейнеров и readiness-проверок.</returns>
     [Before(HookType.Class)]
     [Timeout(300_000)]
-    public static async Task StartContainers(CancellationToken ct)
+    public static async Task StartContainers(CancellationToken cancellationToken)
     {
         _environment = new OAuth2Environment();
-        await _environment.StartAsync(ct);
+        await _environment.StartAsync(cancellationToken);
     }
 
     /// <summary>
     /// Освобождает общую инфраструктуру после всех тестов и выводит достигнутый параллелизм.
     /// </summary>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для hook.</param>
     /// <returns>Задача освобождения контейнеров, сети, HTTP-клиента и сертификатов.</returns>
     [After(HookType.Class)]
-    public static async Task StopContainers(CancellationToken ct)
+    public static async Task StopContainers(CancellationToken cancellationToken)
     {
         if (_environment is not null) await _environment.DisposeAsync();
         Console.WriteLine($"[timing] maximum parallel tests: {_maximumParallelTests}");
@@ -49,9 +49,9 @@ public sealed class OAuth2IntegrationTests
     /// Начинает замер теста и потокобезопасно обновляет число одновременно выполняющихся сценариев.
     /// </summary>
     /// <param name="context">Контекст TUnit с именем текущего теста.</param>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для hook.</param>
     [Before(HookType.Test)]
-    public void RecordTestStart(TestContext context, CancellationToken ct)
+    public void RecordTestStart(TestContext context, CancellationToken cancellationToken)
     {
         _duration.Start();
         var active = Interlocked.Increment(ref _activeTests);
@@ -68,9 +68,9 @@ public sealed class OAuth2IntegrationTests
     /// Завершает замер теста и уменьшает счётчик активных сценариев.
     /// </summary>
     /// <param name="context">Контекст TUnit с именем завершённого теста.</param>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для hook.</param>
     [After(HookType.Test)]
-    public void RecordTestEnd(TestContext context, CancellationToken ct)
+    public void RecordTestEnd(TestContext context, CancellationToken cancellationToken)
     {
         _duration.Stop();
         Interlocked.Decrement(ref _activeTests);
@@ -80,16 +80,16 @@ public sealed class OAuth2IntegrationTests
     /// <summary>
     /// Проверяет открытие двух AMQP-соединений с JWT Keycloak и доставку сообщения через RabbitMQ.
     /// </summary>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
-    public async Task ConnectsWithValidToken(CancellationToken ct)
+    public async Task ConnectsWithValidToken(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, ct: ct);
-        await session.StartAsync(ct);
-        await session.SendAndReceiveAsync(ct);
+        await using var session = await WolverineSession.CreateAsync(Environment, cancellationToken: cancellationToken);
+        await session.StartAsync(cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
         await Assert.That(session.Credentials.Requests >= 2).IsTrue();
-        await WaitForConnectionsAsync(session, ct);
+        await WaitForConnectionsAsync(session, cancellationToken);
         await Assert.That((await Environment.ConnectionIdsAsync(session.ConnectionName)).Length).IsEqualTo(2);
     }
 
@@ -99,16 +99,16 @@ public sealed class OAuth2IntegrationTests
     /// <remarks>
     /// Payload, audience и срок действия токена сохраняются; изменяется только подпись. Успешных обновлений credentials быть не должно.
     /// </remarks>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
-    public async Task RejectsInvalidToken(CancellationToken ct)
+    public async Task RejectsInvalidToken(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, invalidToken: true, ct: ct);
-        var failure = await Assert.That(async () => await session.StartAsync(ct)).Throws<Exception>();
+        await using var session = await WolverineSession.CreateAsync(Environment, invalidToken: true, cancellationToken: cancellationToken);
+        var failure = await Assert.That(async () => await session.StartAsync(cancellationToken)).Throws<Exception>();
         await Assert.That(ExceptionChain(failure!).Any(e => e is AuthenticationFailureException or PossibleAuthenticationFailureException)).IsTrue();
         await OAuth2Environment.WaitUntilAsync(async () => (await Environment.ConnectionIdsAsync(session.ConnectionName)).Length == 0,
-            TimeSpan.FromSeconds(10), ct);
+            TimeSpan.FromSeconds(10), cancellationToken);
         await Assert.That(session.Log.Successes).IsEqualTo(0);
     }
 
@@ -118,19 +118,19 @@ public sealed class OAuth2IntegrationTests
     /// <remarks>
     /// Для каждого сообщения ожидается собственный ID в обработчике; статистика брокера должна подтвердить доставку всей группы.
     /// </remarks>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
-    public async Task RefreshesExpiredToken(CancellationToken ct)
+    public async Task RefreshesExpiredToken(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, ct: ct);
-        await session.StartAsync(ct);
-        await session.SendAndReceiveAsync(ct);
+        await using var session = await WolverineSession.CreateAsync(Environment, cancellationToken: cancellationToken);
+        await session.StartAsync(cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
         var initialRefreshes = session.Log.Successes;
-        await WaitPastInitialExpiryAsync(session, ct);
-        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes > initialRefreshes), TimeSpan.FromSeconds(15), ct);
+        await WaitPastInitialExpiryAsync(session, cancellationToken);
+        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes > initialRefreshes), TimeSpan.FromSeconds(15), cancellationToken);
         // Distinct messages after the original JWT has expired must traverse the real broker.
-        await session.SendAndReceiveAsync(ct, messageCount: 3);
+        await session.SendAndReceiveAsync(messageCount: 3, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -139,20 +139,20 @@ public sealed class OAuth2IntegrationTests
     /// <remarks>
     /// Сравниваются имена и время установки соединений в Management API: повторное подключение изменит их идентификаторы.
     /// </remarks>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
-    public async Task PreservesConnectionAfterRefresh(CancellationToken ct)
+    public async Task PreservesConnectionAfterRefresh(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, ct: ct);
-        await session.StartAsync(ct);
-        await WaitForConnectionsAsync(session, ct);
+        await using var session = await WolverineSession.CreateAsync(Environment, cancellationToken: cancellationToken);
+        await session.StartAsync(cancellationToken);
+        await WaitForConnectionsAsync(session, cancellationToken);
         var before = await Environment.ConnectionIdsAsync(session.ConnectionName);
         await Assert.That(before.Length).IsEqualTo(2);
         var refreshes = session.Log.Successes;
-        await WaitPastInitialExpiryAsync(session, ct);
-        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes > refreshes), TimeSpan.FromSeconds(15), ct);
-        await session.SendAndReceiveAsync(ct);
+        await WaitPastInitialExpiryAsync(session, cancellationToken);
+        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes > refreshes), TimeSpan.FromSeconds(15), cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
         var after = await Environment.ConnectionIdsAsync(session.ConnectionName);
         // Broker-side name + connected_at distinguishes recovery/reconnect from update-secret.
         await Assert.That(after.SequenceEqual(before)).IsTrue();
@@ -164,14 +164,14 @@ public sealed class OAuth2IntegrationTests
     /// <remarks>
     /// Ошибка включается только у provider текущей сессии, до обращения к Keycloak. Реальная недоступность сервиса проверяется отдельно в <see cref="RecoversAfterKeycloakOutage"/>.
     /// </remarks>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
-    public async Task RecoversAfterTokenEndpointFailure(CancellationToken ct)
+    public async Task RecoversAfterTokenEndpointFailure(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, ct: ct);
-        await session.StartAsync(ct);
-        await session.SendAndReceiveAsync(ct);
+        await using var session = await WolverineSession.CreateAsync(Environment, cancellationToken: cancellationToken);
+        await session.StartAsync(cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
         var failures = session.Credentials.Failures;
         var errors = session.Log.Errors;
         var refreshes = session.Log.Successes;
@@ -179,7 +179,7 @@ public sealed class OAuth2IntegrationTests
         try
         {
             await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Credentials.Failures > failures && session.Log.Errors > errors),
-                TimeSpan.FromSeconds(25), ct);
+                TimeSpan.FromSeconds(25), cancellationToken);
             refreshes = session.Log.Successes;
         }
         finally
@@ -187,8 +187,8 @@ public sealed class OAuth2IntegrationTests
             session.Credentials.FailTokenRequests = false;
         }
 
-        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes >= refreshes + 2), TimeSpan.FromSeconds(60), ct);
-        await session.SendAndReceiveAsync(ct);
+        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes >= refreshes + 2), TimeSpan.FromSeconds(60), cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -197,42 +197,42 @@ public sealed class OAuth2IntegrationTests
     /// <remarks>
     /// Docker Pause/Unpause сохраняет назначенный порт и делает общий endpoint недоступным. Сценарий категории Slow выполняется эксклюзивно и перед публикацией ожидает обновлений токена, соединений и consumer своей очереди; перезапуск JVM здесь не проверяется.
     /// </remarks>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
     [Category("Slow")]
     [NotInParallel]
-    public async Task RecoversAfterKeycloakOutage(CancellationToken ct)
+    public async Task RecoversAfterKeycloakOutage(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, ct: ct);
-        await session.StartAsync(ct);
-        await session.SendAndReceiveAsync(ct);
+        await using var session = await WolverineSession.CreateAsync(Environment, cancellationToken: cancellationToken);
+        await session.StartAsync(cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
         var failures = session.Credentials.Failures;
         var errors = session.Log.Errors;
         var refreshes = session.Log.Successes;
         // Pause preserves the dynamic port and makes the real token endpoint
         // unavailable. The provider bounds each HTTP request to five seconds.
-        await Environment.Keycloak.PauseAsync(ct);
+        await Environment.Keycloak.PauseAsync(cancellationToken);
         try
         {
             await OAuth2Environment.WaitUntilAsync(
                 () => Task.FromResult(session.Credentials.Failures > failures && session.Log.Errors > errors),
-                TimeSpan.FromSeconds(25), ct);
+                TimeSpan.FromSeconds(25), cancellationToken);
             refreshes = session.Log.Successes;
         }
         finally
         {
             await Environment.Keycloak.UnpauseAsync();
-            await Environment.WaitForKeycloakAsync(ct);
+            await Environment.WaitForKeycloakAsync(cancellationToken);
         }
 
         // A single successful callback can belong only to the sending connection.
         // Wait for two completed updates and broker-side listener readiness before publishing.
-        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes >= refreshes + 2), TimeSpan.FromSeconds(60), ct);
-        await WaitForConnectionsAsync(session, ct);
-        await OAuth2Environment.WaitUntilAsync(async () => await Environment.ConsumerCountAsync(session.QueueName, ct) > 0,
-            TimeSpan.FromSeconds(15), ct);
-        await session.SendAndReceiveAsync(ct);
+        await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(session.Log.Successes >= refreshes + 2), TimeSpan.FromSeconds(60), cancellationToken);
+        await WaitForConnectionsAsync(session, cancellationToken);
+        await OAuth2Environment.WaitUntilAsync(async () => await Environment.ConsumerCountAsync(session.QueueName, cancellationToken) > 0,
+            TimeSpan.FromSeconds(15), cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -241,14 +241,14 @@ public sealed class OAuth2IntegrationTests
     /// <remarks>
     /// Worker ожидает получение credentials и callback с UpdateSecretAsync. Его завершение исключает незавершённые обновления и будущие попытки, поэтому ожидание двух TTL не требуется.
     /// </remarks>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача выполнения проверки.</returns>
     [Test]
-    public async Task StopsRefreshingAfterDispose(CancellationToken ct)
+    public async Task StopsRefreshingAfterDispose(CancellationToken cancellationToken)
     {
-        await using var session = await WolverineSession.CreateAsync(Environment, ct: ct);
-        await session.StartAsync(ct);
-        await session.SendAndReceiveAsync(ct);
+        await using var session = await WolverineSession.CreateAsync(Environment, cancellationToken: cancellationToken);
+        await session.StartAsync(cancellationToken);
+        await session.SendAndReceiveAsync(cancellationToken: cancellationToken);
         var refreshers = session.CaptureRefreshDiagnostics();
         await Assert.That(refreshers.Length).IsEqualTo(2);
         await session.DisposeAsync();
@@ -260,7 +260,7 @@ public sealed class OAuth2IntegrationTests
         var requests = session.Credentials.Requests;
         var refreshes = session.Log.Successes;
         await OAuth2Environment.WaitUntilAsync(async () => (await Environment.ConnectionIdsAsync(session.ConnectionName)).Length == 0,
-            TimeSpan.FromSeconds(10), ct);
+            TimeSpan.FromSeconds(10), cancellationToken);
         await Assert.That(session.Credentials.Requests).IsEqualTo(requests);
         await Assert.That(session.Log.Successes).IsEqualTo(refreshes);
         await Assert.That(session.Credentials.ActiveRequests).IsEqualTo(0);
@@ -273,15 +273,15 @@ public sealed class OAuth2IntegrationTests
     /// JWT и часы брокера имеют секундную точность; дополнительная произвольная задержка не используется.
     /// </remarks>
     /// <param name="session">Сессия с зафиксированным сроком действия первого токена.</param>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача ожидания фактического истечения исходного JWT.</returns>
-    private static async Task WaitPastInitialExpiryAsync(WolverineSession session, CancellationToken ct)
+    private static async Task WaitPastInitialExpiryAsync(WolverineSession session, CancellationToken cancellationToken)
     {
         // JWT exp and the broker's clock have whole-second precision. Cross that
         // boundary before sending; waiting for real expiry is part of this assertion.
         await OAuth2Environment.WaitUntilAsync(
             () => Task.FromResult(DateTimeOffset.UtcNow.ToUnixTimeSeconds() > session.Credentials.FirstExpiration.ToUnixTimeSeconds()),
-            TimeSpan.FromSeconds(OAuth2Environment.TokenLifetimeSeconds + 5), ct);
+            TimeSpan.FromSeconds(OAuth2Environment.TokenLifetimeSeconds + 5), cancellationToken);
         await Assert.That(DateTimeOffset.UtcNow > session.Credentials.FirstExpiration).IsTrue();
     }
 
@@ -289,11 +289,11 @@ public sealed class OAuth2IntegrationTests
     /// Ожидает регистрации в Management API двух соединений указанной сессии.
     /// </summary>
     /// <param name="session">Сессия с уникальным именем AMQP-соединений.</param>
-    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <param name="cancellationToken">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
     /// <returns>Задача ожидания готовности обоих соединений.</returns>
-    private static Task WaitForConnectionsAsync(WolverineSession session, CancellationToken ct) =>
+    private static Task WaitForConnectionsAsync(WolverineSession session, CancellationToken cancellationToken) =>
         OAuth2Environment.WaitUntilAsync(async () => (await Environment.ConnectionIdsAsync(session.ConnectionName)).Length == 2,
-            TimeSpan.FromSeconds(15), ct);
+            TimeSpan.FromSeconds(15), cancellationToken);
 
     /// <summary>
     /// Перечисляет исходное исключение и вложенные причины, разворачивая AggregateException.

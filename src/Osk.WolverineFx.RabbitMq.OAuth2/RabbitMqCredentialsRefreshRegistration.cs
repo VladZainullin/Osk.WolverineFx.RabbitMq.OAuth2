@@ -45,9 +45,9 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    private async Task OnRefreshedAsync(Credentials? credentials, Exception? exception, CancellationToken ct)
+    private async Task OnRefreshedAsync(Credentials? credentials, Exception? exception, CancellationToken cancellationToken)
     {
-        if (ct.IsCancellationRequested) return;
+        if (cancellationToken.IsCancellationRequested) return;
         if (exception is not null)
         {
             _logger.LogError(exception, "RabbitMQ OAuth2 credentials refresh failed");
@@ -63,11 +63,11 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         if (!_connection.IsOpen) return;
         try
         {
-            await _connection.UpdateSecretAsync(credentials.Password, "OAuth2 access token refresh", ct)
+            await _connection.UpdateSecretAsync(credentials.Password, "OAuth2 access token refresh", cancellationToken)
                 .ConfigureAwait(false);
             _logger.LogDebug("RabbitMQ OAuth2 token refreshed successfully");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex)
         {
             _logger.LogError(ex, "RabbitMQ OAuth2 connection token update failed");

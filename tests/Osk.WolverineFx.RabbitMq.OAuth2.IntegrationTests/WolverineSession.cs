@@ -92,16 +92,16 @@ internal sealed class WolverineSession : IAsyncDisposable
     /// </summary>
     /// <param name="environment">Запущенное общее окружение Keycloak и RabbitMQ.</param>
     /// <param name="invalidToken">Изменять только подпись JWT для проверки отказа аутентификации.</param>
-    /// <param name="ct">Токен отмены создания OAuth2-клиента.</param>
+    /// <param name="cancellationToken">Токен отмены создания OAuth2-клиента.</param>
     /// <returns>Новая сессия, которую вызывающий код должен освободить через DisposeAsync.</returns>
-    public static async Task<WolverineSession> CreateAsync(OAuth2Environment environment, bool invalidToken = false, CancellationToken ct = default)
+    public static async Task<WolverineSession> CreateAsync(OAuth2Environment environment, bool invalidToken = false, CancellationToken cancellationToken = default)
     {
         var started = Stopwatch.GetTimestamp();
         WolverineSession? session = null;
         try
         {
             var oauth = await new OAuth2ClientBuilder("wolverine", environment.ClientSecret, tokenEndpoint: environment.TokenEndpoint)
-                .BuildAsync(ct);
+                .BuildAsync(cancellationToken);
             return session = new WolverineSession(environment, oauth, invalidToken);
         }
         finally { WriteTiming("create", started, session?.ConnectionName); }
@@ -110,18 +110,18 @@ internal sealed class WolverineSession : IAsyncDisposable
     /// <summary>
     /// Запускает host и ожидает начальные успешные обновления credentials.
     /// </summary>
-    /// <param name="ct">Токен отмены запуска и ожидания.</param>
+    /// <param name="cancellationToken">Токен отмены запуска и ожидания.</param>
     /// <returns>Задача запуска сессии и готовности обновления токенов.</returns>
-    public async Task StartAsync(CancellationToken ct = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         var started = Stopwatch.GetTimestamp();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(45));
         try
         {
             await _host.StartAsync(timeout.Token);
             _started = true;
-            await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(Log.Successes >= 2), TimeSpan.FromSeconds(15), ct);
+            await OAuth2Environment.WaitUntilAsync(() => Task.FromResult(Log.Successes >= 2), TimeSpan.FromSeconds(15), cancellationToken);
         }
         finally { WriteTiming("start", started, ConnectionName); }
     }
@@ -132,11 +132,11 @@ internal sealed class WolverineSession : IAsyncDisposable
     /// <remarks>
     /// Scoped IMessageBus получается из отдельного async scope на весь вызов. Вызовы внутри одной сессии должны быть последовательными: используется последний подтверждённый счётчик её уникальной очереди.
     /// </remarks>
-    /// <param name="ct">Токен отмены ожиданий доставки и запросов Management API.</param>
     /// <param name="messageCount">Положительное число сообщений в проверяемой группе.</param>
+    /// <param name="cancellationToken">Токен отмены ожиданий доставки и запросов Management API.</param>
     /// <returns>Задача проверки получения каждого ID и роста broker deliver_get минимум на размер группы.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Число сообщений неположительное.</exception>
-    public async Task SendAndReceiveAsync(CancellationToken ct = default, int messageCount = 1)
+    public async Task SendAndReceiveAsync(int messageCount = 1, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(messageCount);
         await using var scope = _host.Services.CreateAsyncScope();
@@ -149,16 +149,16 @@ internal sealed class WolverineSession : IAsyncDisposable
             var id = Guid.NewGuid();
             var received = _delivery.Expect(id);
             await bus.PublishAsync(new ProbeMessage(id));
-            await received.WaitAsync(TimeSpan.FromSeconds(15), ct);
+            await received.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         }
         // Prove the whole batch went through RabbitMQ, even if local routing is accidentally enabled.
         await OAuth2Environment.WaitUntilAsync(async () =>
         {
-            var delivered = await _environment.DeliveredMessagesAsync(QueueName, ct);
+            var delivered = await _environment.DeliveredMessagesAsync(QueueName, cancellationToken);
             if (delivered - before < messageCount) return false;
             _deliveredMessages = delivered;
             return true;
-        }, TimeSpan.FromSeconds(15), ct);
+        }, TimeSpan.FromSeconds(15), cancellationToken);
     }
 
     /// <summary>

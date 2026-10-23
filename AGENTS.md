@@ -11,6 +11,8 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 - Name Harmony patch classes and their files using the target class name + target method name + Patch pattern (for example, RabbitMqTransportDisposeAsyncPatch).
 - Consumers must only need a normal PackageReference in their executable C# project. Do not require EmitCompilerGeneratedFiles, manual registration, or custom MSBuild imports for normal use.
 - Preserve the analyzer DLL under analyzers/dotnet/cs in the NuGet package. It must not become a runtime dependency.
+- Name CancellationToken parameters and locals `cancellationToken`; do not use `ct`, `token`, or other ambiguous abbreviations. Use meaningful specialized names such as `shutdownCancellationToken` when multiple tokens are in scope.
+- Put CancellationToken last in method, constructor, and delegate parameter lists wherever compatibility permits. Preserve required interface, override, and third-party API signatures; update call sites and XML parameter documentation when renaming or reordering. Named arguments such as `cancellationToken: cancellationToken` are welcome for readability. Apply these rules to runtime code, source generators, samples, tests, and test infrastructure without changing cancellation behavior, CancellationTokenSource lifetimes, or OperationCanceledException handling.
 - Never log token values or introduce credentials into source files.
 - Use RabbitMQ.Client.OAuth2 CredentialsRefresher for refresh scheduling. The registration adapter only sends credentials to the connection and manages shutdown; do not introduce a second timer or refresh loop.
 

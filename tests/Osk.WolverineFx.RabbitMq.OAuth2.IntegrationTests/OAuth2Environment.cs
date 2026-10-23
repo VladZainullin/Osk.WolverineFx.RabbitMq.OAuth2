@@ -110,18 +110,18 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <remarks>
     /// При неудачном запуске собирает журналы и освобождает созданные ресурсы.
     /// </remarks>
-    /// <param name="ct">Токен отмены запуска и readiness-проверок.</param>
+    /// <param name="cancellationToken">Токен отмены запуска и readiness-проверок.</param>
     /// <returns>Задача подготовки окружения к выполнению тестов.</returns>
-    public async Task StartAsync(CancellationToken ct)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         var started = Stopwatch.GetTimestamp();
         try
         {
             var networkStarted = Stopwatch.GetTimestamp();
-            await _network.CreateAsync(ct);
+            await _network.CreateAsync(cancellationToken);
             WriteTiming("Network creation", networkStarted);
-            await StartKeycloakAsync(ct);
-            await StartRabbitMqAsync(ct);
+            await StartKeycloakAsync(cancellationToken);
+            await StartRabbitMqAsync(cancellationToken);
         }
         catch
         {
@@ -144,15 +144,15 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <summary>
     /// Запускает Keycloak и ожидает доступности импортированного realm по HTTP.
     /// </summary>
-    /// <param name="ct">Токен отмены запуска и HTTP-проверок.</param>
+    /// <param name="cancellationToken">Токен отмены запуска и HTTP-проверок.</param>
     /// <returns>Задача готовности Keycloak.</returns>
-    private async Task StartKeycloakAsync(CancellationToken ct)
+    private async Task StartKeycloakAsync(CancellationToken cancellationToken)
     {
         var started = Stopwatch.GetTimestamp();
         try
         {
-            await Keycloak.StartAsync(ct);
-            await WaitForKeycloakAsync(ct);
+            await Keycloak.StartAsync(cancellationToken);
+            await WaitForKeycloakAsync(cancellationToken);
         }
         finally { WriteTiming("Keycloak start and readiness", started); }
     }
@@ -160,14 +160,14 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <summary>
     /// Получает публичный ключ Keycloak, запускает RabbitMQ, настраивает адрес Management API и ожидает ответа overview.
     /// </summary>
-    /// <param name="ct">Токен отмены запуска и HTTP-проверок.</param>
+    /// <param name="cancellationToken">Токен отмены запуска и HTTP-проверок.</param>
     /// <returns>Задача готовности RabbitMQ.</returns>
-    private async Task StartRabbitMqAsync(CancellationToken ct)
+    private async Task StartRabbitMqAsync(CancellationToken cancellationToken)
     {
         var started = Stopwatch.GetTimestamp();
         try
         {
-            var (kid, publicKey) = await GetSigningKeyAsync(ct);
+            var (kid, publicKey) = await GetSigningKeyAsync(cancellationToken);
             _rabbitMq = new ContainerBuilder("rabbitmq:4.1.4-management")
                 .WithNetwork(_network).WithNetworkAliases("rabbitmq")
                 .WithPortBinding(5672, true).WithPortBinding(15672, true)
@@ -187,18 +187,18 @@ internal sealed class OAuth2Environment : IAsyncDisposable
                 .WithResourceMapping(publicKey, "/etc/rabbitmq/keycloak-public.pem")
                 .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server startup complete"))
                 .Build();
-            await RabbitMq.StartAsync(ct);
+            await RabbitMq.StartAsync(cancellationToken);
             Management.BaseAddress = new Uri($"http://{RabbitMq.Hostname}:{RabbitMq.GetMappedPublicPort(15672)}/api/");
             await WaitUntilAsync(async () =>
             {
                 try
                 {
-                    using var response = await Management.GetAsync("overview", ct);
+                    using var response = await Management.GetAsync("overview", cancellationToken);
                     return response.IsSuccessStatusCode;
                 }
                 catch (HttpRequestException) { return false; }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return false; }
-            }, TimeSpan.FromSeconds(30), ct);
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return false; }
+            }, TimeSpan.FromSeconds(30), cancellationToken);
         }
         finally { WriteTiming("RabbitMQ start and readiness", started); }
     }
@@ -206,26 +206,26 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <summary>
     /// Получает тестовый JWT и JWKS по HTTP и экспортирует публичный RSA-ключ подписи, выбранный по kid токена.
     /// </summary>
-    /// <param name="ct">Токен отмены HTTP-запросов.</param>
+    /// <param name="cancellationToken">Токен отмены HTTP-запросов.</param>
     /// <returns>Идентификатор ключа и публичный ключ в PEM для настройки RabbitMQ.</returns>
-    private async Task<(string Kid, byte[] PublicKey)> GetSigningKeyAsync(CancellationToken ct)
+    private async Task<(string Kid, byte[] PublicKey)> GetSigningKeyAsync(CancellationToken cancellationToken)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials", ["client_id"] = "wolverine", ["client_secret"] = ClientSecret
         });
-        using var response = await http.PostAsync(TokenEndpoint, form, ct);
+        using var response = await http.PostAsync(TokenEndpoint, form, cancellationToken);
         response.EnsureSuccessStatusCode();
-        using var token = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        using var token = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         var jwt = token.RootElement.GetProperty("access_token").GetString()!;
         using var header = JsonDocument.Parse(Base64Url.DecodeFromChars(jwt.Split('.')[0]));
         var kid = header.RootElement.GetProperty("kid").GetString()!;
         if (header.RootElement.GetProperty("alg").GetString() != "RS256")
             throw new InvalidOperationException("Expected an RS256 test token from Keycloak");
 
-        using var stream = await http.GetStreamAsync(new Uri(TokenEndpoint, "certs"), ct);
-        using var jwks = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        using var stream = await http.GetStreamAsync(new Uri(TokenEndpoint, "certs"), cancellationToken);
+        using var jwks = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         // Match the signing token's kid: the realm also exposes keys used for encryption.
         var key = jwks.RootElement.GetProperty("keys").EnumerateArray().Single(key =>
             key.GetProperty("kid").GetString() == kid && key.GetProperty("kty").GetString() == "RSA"
@@ -259,13 +259,13 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// Читает накопительный счётчик deliver_get указанной очереди через Management API.
     /// </summary>
     /// <param name="queue">Имя очереди в виртуальном хосте по умолчанию.</param>
-    /// <param name="ct">Токен отмены HTTP-запроса.</param>
+    /// <param name="cancellationToken">Токен отмены HTTP-запроса.</param>
     /// <returns>Число доставок или ноль, если брокер ещё не опубликовал message_stats.</returns>
-    public async Task<long> DeliveredMessagesAsync(string queue, CancellationToken ct)
+    public async Task<long> DeliveredMessagesAsync(string queue, CancellationToken cancellationToken)
     {
-        using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", ct);
+        using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", cancellationToken);
         response.EnsureSuccessStatusCode();
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         return json.RootElement.TryGetProperty("message_stats", out var stats) && stats.TryGetProperty("deliver_get", out var deliveries)
             ? deliveries.GetInt64() : 0;
     }
@@ -274,22 +274,22 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// Читает число consumers указанной очереди через Management API.
     /// </summary>
     /// <param name="queue">Имя очереди в виртуальном хосте по умолчанию.</param>
-    /// <param name="ct">Токен отмены HTTP-запроса.</param>
+    /// <param name="cancellationToken">Токен отмены HTTP-запроса.</param>
     /// <returns>Число consumers по последней доступной статистике брокера.</returns>
-    public async Task<int> ConsumerCountAsync(string queue, CancellationToken ct)
+    public async Task<int> ConsumerCountAsync(string queue, CancellationToken cancellationToken)
     {
-        using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", ct);
+        using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", cancellationToken);
         response.EnsureSuccessStatusCode();
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         return json.RootElement.GetProperty("consumers").GetInt32();
     }
 
     /// <summary>
     /// Ожидает успешного HTTP-ответа импортированного realm после запуска или возобновления Keycloak.
     /// </summary>
-    /// <param name="ct">Токен отмены ожидания.</param>
+    /// <param name="cancellationToken">Токен отмены ожидания.</param>
     /// <returns>Задача ожидания доступности realm.</returns>
-    public async Task WaitForKeycloakAsync(CancellationToken ct)
+    public async Task WaitForKeycloakAsync(CancellationToken cancellationToken)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
         var realm = new Uri($"http://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8080)}/realms/wolverine");
@@ -297,12 +297,12 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         {
             try
             {
-                using var response = await http.GetAsync(realm, ct);
+                using var response = await http.GetAsync(realm, cancellationToken);
                 return response.IsSuccessStatusCode;
             }
             catch (HttpRequestException) { return false; }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return false; }
-        }, TimeSpan.FromSeconds(90), ct);
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return false; }
+        }, TimeSpan.FromSeconds(90), cancellationToken);
     }
 
     /// <summary>
@@ -313,19 +313,19 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// </remarks>
     /// <param name="condition">Проверка, возвращающая true при достижении нужного состояния.</param>
     /// <param name="timeout">Бюджет ожидания между проверками.</param>
-    /// <param name="ct">Внешний токен отмены ожидания.</param>
+    /// <param name="cancellationToken">Внешний токен отмены ожидания.</param>
     /// <returns>Задача, завершающаяся после успешной проверки.</returns>
     /// <exception cref="TimeoutException">Условие не достигнуто до истечения бюджета ожидания.</exception>
     /// <exception cref="OperationCanceledException">Ожидание прервано внешним токеном отмены.</exception>
-    public static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct = default)
+    public static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
         try
         {
             while (!await condition()) await Task.Delay(100, deadline.Token);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException($"Expected condition was not met within {timeout}.");
         }

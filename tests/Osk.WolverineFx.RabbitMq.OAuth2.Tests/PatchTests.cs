@@ -46,7 +46,7 @@ public class PatchTests
         connection.SetupGet(x => x.IsOpen).Returns(true);
         var updated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken ct) => { updated.TrySetResult(token); return Task.CompletedTask; });
+            .Returns((string token, string reason, CancellationToken cancellationToken) => { updated.TrySetResult(token); return Task.CompletedTask; });
         var provider = Provider("new-token", TimeSpan.FromMilliseconds(150));
         typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
             .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
@@ -130,7 +130,7 @@ public class PatchTests
         var secondUpdate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var updates = 0;
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken ct) =>
+            .Returns((string token, string reason, CancellationToken cancellationToken) =>
             {
                 if (Interlocked.Increment(ref updates) == 1)
                 {
@@ -166,7 +166,7 @@ public class PatchTests
         connection.SetupGet(x => x.IsOpen).Returns(true);
         var recovered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken ct) =>
+            .Returns((string token, string reason, CancellationToken cancellationToken) =>
             {
                 if (token == "recovered-token")
                 {
@@ -207,7 +207,7 @@ public class PatchTests
         var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var updates = 0;
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken ct) =>
+            .Returns((string token, string reason, CancellationToken cancellationToken) =>
             {
                 if (Interlocked.Increment(ref updates) == 1)
                 {
@@ -265,11 +265,11 @@ public class PatchTests
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = new Mock<ICredentialsProvider>();
         provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
-            .Returns(async (CancellationToken ct) =>
+            .Returns(async (CancellationToken cancellationToken) =>
             {
-                using var callback = ct.Register(() => cancelled.TrySetResult());
+                using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
                 requested.TrySetResult();
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
@@ -296,7 +296,7 @@ public class PatchTests
         connection.SetupGet(x => x.IsOpen).Returns(true);
         var updated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken ct) =>
+            .Returns((string token, string reason, CancellationToken cancellationToken) =>
             {
                 updated.TrySetResult();
                 return Task.CompletedTask;
@@ -353,9 +353,9 @@ public class PatchTests
         var provider = new Mock<ICredentialsProvider>();
         provider.SetupGet(x => x.Name).Throws(failure);
         provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
-            .Returns(async (CancellationToken ct) =>
+            .Returns(async (CancellationToken cancellationToken) =>
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
@@ -386,11 +386,11 @@ public class PatchTests
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = new Mock<ICredentialsProvider>();
         provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
-            .Returns(async (CancellationToken ct) =>
+            .Returns(async (CancellationToken cancellationToken) =>
             {
-                using var callback = ct.Register(() => cancelled.TrySetResult());
+                using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
                 requested.TrySetResult();
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
@@ -414,12 +414,12 @@ public class PatchTests
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string token, string reason, CancellationToken ct) =>
+            .Returns(async (string token, string reason, CancellationToken cancellationToken) =>
             {
-                using var callback = ct.Register(() => cancelled.TrySetResult());
+                using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
                 entered.TrySetResult();
                 await release.Task;
-                ct.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
             });
         var provider = Provider("token");
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);

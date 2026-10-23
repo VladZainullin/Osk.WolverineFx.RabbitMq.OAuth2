@@ -3,3 +3,4 @@
 artifacts/
 TestResults/
 .idea/
+*.user

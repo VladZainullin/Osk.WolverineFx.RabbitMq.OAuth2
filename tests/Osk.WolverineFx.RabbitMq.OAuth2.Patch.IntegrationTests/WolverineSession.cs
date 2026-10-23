@@ -23,7 +23,6 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
 internal sealed class WolverineSession : IAsyncDisposable
 {
     private readonly IOAuth2Client _oauthClient;
-    private readonly HttpClientHandler _httpHandler;
     private readonly OAuth2Environment _environment;
     private readonly IHost _host;
     private readonly DeliveryProbe _delivery = new();
@@ -52,13 +51,11 @@ internal sealed class WolverineSession : IAsyncDisposable
     /// </summary>
     /// <param name="environment">Общее запущенное окружение с контейнерами.</param>
     /// <param name="oauthClient">OAuth2-клиент, принадлежащий создаваемой сессии.</param>
-    /// <param name="httpHandler">Принадлежащий сессии обработчик HTTPS с доверием тестовому CA.</param>
     /// <param name="invalidToken">Признак изменения подписи выдаваемого JWT для отрицательной проверки.</param>
-    private WolverineSession(OAuth2Environment environment, IOAuth2Client oauthClient, HttpClientHandler httpHandler, bool invalidToken)
+    private WolverineSession(OAuth2Environment environment, IOAuth2Client oauthClient, bool invalidToken)
     {
         _oauthClient = oauthClient;
         _environment = environment;
-        _httpHandler = httpHandler;
         Credentials = new TrackingCredentialsProvider(
             new OAuth2ClientCredentialsProvider(ConnectionName, oauthClient), invalidToken);
         _host = Host.CreateDefaultBuilder()
@@ -100,15 +97,13 @@ internal sealed class WolverineSession : IAsyncDisposable
     public static async Task<WolverineSession> CreateAsync(OAuth2Environment environment, bool invalidToken = false, CancellationToken ct = default)
     {
         var started = Stopwatch.GetTimestamp();
-        var handler = environment.Tls.CreateHandler();
         WolverineSession? session = null;
         try
         {
             var oauth = await new OAuth2ClientBuilder("wolverine", environment.ClientSecret, tokenEndpoint: environment.TokenEndpoint)
-                .SetHttpClientHandler(handler).BuildAsync(ct);
-            return session = new WolverineSession(environment, oauth, handler, invalidToken);
+                .BuildAsync(ct);
+            return session = new WolverineSession(environment, oauth, invalidToken);
         }
-        catch { handler.Dispose(); throw; }
         finally { WriteTiming("create", started, session?.ConnectionName); }
     }
 
@@ -209,7 +204,7 @@ internal sealed class WolverineSession : IAsyncDisposable
     public ValueTask DisposeAsync() => new(_disposeTask ??= DisposeCoreAsync());
 
     /// <summary>
-    /// Останавливает host и обеспечивает освобождение credentials provider, OAuth2-клиента и HTTPS handler.
+    /// Останавливает host и обеспечивает освобождение credentials provider и OAuth2-клиента.
     /// </summary>
     /// <returns>Задача завершения работы и освобождения ресурсов.</returns>
     private async Task DisposeCoreAsync()
@@ -234,7 +229,6 @@ internal sealed class WolverineSession : IAsyncDisposable
             {
                 Credentials.Dispose();
                 (_oauthClient as IDisposable)?.Dispose();
-                _httpHandler.Dispose();
                 WriteTiming("dispose", started, ConnectionName);
             }
         }

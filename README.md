@@ -47,7 +47,9 @@ dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTes
 dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests -c Release --treenode-filter '/*/*/*/*[Category=Slow]'
 ```
 
-Нужны работающий локальный Docker Engine и доступ к Docker Hub и quay.io для первого скачивания образов. Testcontainers 4.16.0 поднимает RabbitMQ `4.1.4-management` и Keycloak `26.1.4` одновременно в отдельной сети, создаёт realm и service-account client, затем удаляет контейнеры и сеть. Порты назначает Docker; ручного резервирования порта нет. Пароли, client secret и тестовый CA генерируются для каждого запуска; настройки и сертификаты не требуют ручной подготовки. HTTPS проверяется через этот CA, включая имя сервера, цепочку и назначение сертификата. Проверка подписи и audience JWT в RabbitMQ включена. HTTPS сохранён: конфигурационная схема RabbitMQ 4.1.4 требует HTTPS для `auth_oauth2.issuer` и `auth_oauth2.jwks_url`; переход на HTTP потребовал бы обхода этой проверки.
+Нужны работающий локальный Docker Engine и доступ к Docker Hub и quay.io для первого скачивания образов. Testcontainers 4.16.0 сначала запускает Keycloak `26.1.4` в режиме `start-dev` по HTTP на контейнерном порту `8080`, импортирует realm и service-account client. Затем fixture запрашивает тестовый JWT и JWKS по HTTP, выбирает RSA-ключ подписи по `kid` из заголовка токена и преобразует его публичные параметры в PEM. Только после этого запускается RabbitMQ `4.1.4-management`: Testcontainers копирует публичный ключ в контейнер, а `auth_oauth2.signing_keys.<kid>` задаёт его для настоящей проверки JWT. Брокер не использует `auth_oauth2.issuer` и `auth_oauth2.jwks_url`; локальный публичный ключ заменяет получение JWKS через HTTPS.
+
+Подпись JWT, audience, срок действия и permissions проверяет RabbitMQ. Приватный ключ генерирует и хранит Keycloak; фиксированных приватных ключей в репозитории нет. Пароли и client secret генерируются для каждого запуска. Сертификаты и CA не нужны. AMQP работает на контейнерном порту `5672`, Management API — по HTTP на `15672`. Публичные порты всех сервисов динамически назначает Docker. Контейнеры используют отдельную сеть и удаляются вместе с ней после тестов. **Эта HTTP-конфигурация предназначена только для интеграционных тестов.** Ключ копируется один раз при запуске fixture; ротация ключей Keycloak во время прогона не поддерживается.
 
 Один комплект контейнеров и одна сеть обслуживают весь класс через hooks TUnit `Before(Class)` / `After(Class)`. Шесть обычных тестов выполняются параллельно, максимум четыре одновременно, и используют JWT со сроком жизни восемь секунд. У каждого теста собственные Wolverine host, credentials provider, очередь, имя соединения, счётчики и ожидания сообщений. Общий HTTP-клиент Management API настраивается до запуска тестов; его заголовки во время тестов не изменяются.
 
@@ -56,7 +58,7 @@ dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTes
 | Тест | Проверка |
 | --- | --- |
 | `ConnectsWithValidToken` | Wolverine открывает два AMQP-соединения с JWT Keycloak и доставляет сообщение через RabbitMQ. |
-| `RejectsInvalidToken` | Изменённый токен приводит к ошибке аутентификации; соединения не остаются открытыми. |
+| `RejectsInvalidToken` | Повреждение только подписи JWT при сохранении его заголовка и payload приводит к ошибке аутентификации; соединения не остаются открытыми. |
 | `RefreshesExpiredToken` | После истечения исходного JWT три новых сообщения доходят до обработчика; счётчик доставки брокера увеличивается минимум на три. |
 | `PreservesConnectionAfterRefresh` | После обновления и доставки сохраняются идентификаторы и время открытия обоих соединений из Management API. |
 | `RecoversAfterTokenEndpointFailure` | Собственный credentials provider временно выдаёт ошибку после подключения; после регистрации ошибки и снятия отказа настоящий JWT обновляется и доставка возобновляется. |

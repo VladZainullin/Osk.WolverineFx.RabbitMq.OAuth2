@@ -1,5 +1,7 @@
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DotNet.Testcontainers.Builders;
@@ -9,7 +11,7 @@ using DotNet.Testcontainers.Networks;
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
 
 /// <summary>
-/// Владеет общей Docker-сетью, Keycloak, RabbitMQ и временным TLS-доверием для интеграционного класса.
+/// Владеет общей Docker-сетью, Keycloak и RabbitMQ с локальным публичным ключом для интеграционного класса.
 /// </summary>
 /// <remarks>
 /// Контейнеры используют динамические публичные порты. Management API настраивается до старта тестов и допускает параллельные запросы без изменения заголовков.
@@ -22,11 +24,8 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     public const int TokenLifetimeSeconds = 8;
     private readonly long _constructionStarted = Stopwatch.GetTimestamp();
     private readonly INetwork _network = new NetworkBuilder().Build();
-    /// <summary>
-    /// Временный CA и сертификаты, принадлежащие этому окружению.
-    /// </summary>
-    public TestTls Tls { get; } = new();
     private readonly string _adminPassword = Guid.NewGuid().ToString("N");
+    private IContainer? _rabbitMq;
     private Task? _disposeTask;
     /// <summary>
     /// Сгенерированный secret общего service-account client; значение не должно попадать в журналы.
@@ -39,18 +38,18 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <summary>
     /// Общий контейнер RabbitMQ с OAuth2 backend и Management API.
     /// </summary>
-    public IContainer RabbitMq { get; }
+    public IContainer RabbitMq => _rabbitMq ?? throw new InvalidOperationException("RabbitMQ has not been prepared");
     /// <summary>
     /// HTTP-клиент Management API с административными credentials для наблюдения состояния брокера.
     /// </summary>
     public HttpClient Management { get; } = new() { Timeout = TimeSpan.FromSeconds(10) };
     /// <summary>
-    /// HTTPS-адрес выдачи токенов через динамический публичный порт запущенного Keycloak.
+    /// HTTP-адрес выдачи токенов через динамический публичный порт запущенного Keycloak.
     /// </summary>
-    public Uri TokenEndpoint => new($"https://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8443)}/realms/wolverine/protocol/openid-connect/token");
+    public Uri TokenEndpoint => new($"http://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8080)}/realms/wolverine/protocol/openid-connect/token");
 
     /// <summary>
-    /// Генерирует тестовые credentials и TLS-материалы и описывает контейнеры без их запуска.
+    /// Генерирует тестовые credentials и описывает контейнер Keycloak без его запуска.
     /// </summary>
     public OAuth2Environment()
     {
@@ -93,46 +92,20 @@ internal sealed class OAuth2Environment : IAsyncDisposable
 
         Keycloak = new ContainerBuilder("quay.io/keycloak/keycloak:26.1.4")
             .WithNetwork(_network).WithNetworkAliases("keycloak")
-            .WithPortBinding(8443, true)
-            .WithEnvironment("KC_HOSTNAME", "https://keycloak:8443")
+            .WithPortBinding(8080, true)
+            .WithEnvironment("KC_HOSTNAME", "http://keycloak:8080")
             .WithEnvironment("JAVA_OPTS_KC_HEAP", "-Xms128m -Xmx512m")
             .WithEnvironment("JAVA_OPTS_APPEND", "-XX:ActiveProcessorCount=2")
             .WithResourceMapping(realm, "/opt/keycloak/data/import/wolverine.json")
-            .WithResourceMapping(Tls.ServerCertificatePem, "/opt/keycloak/conf/server.crt")
-            .WithResourceMapping(Tls.ServerKeyPem, "/opt/keycloak/conf/server.key")
-            .WithCommand("start-dev", "--import-realm", "--http-enabled=false",
-                "--https-certificate-file=/opt/keycloak/conf/server.crt", "--https-certificate-key-file=/opt/keycloak/conf/server.key")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Listening on: .*https://"))
-            .Build();
-
-        RabbitMq = new ContainerBuilder("rabbitmq:4.1.4-management")
-            .WithNetwork(_network).WithNetworkAliases("rabbitmq")
-            .WithPortBinding(5672, true).WithPortBinding(15672, true)
-            .WithEnvironment("RABBITMQ_DEFAULT_USER", "integration-admin")
-            .WithEnvironment("RABBITMQ_DEFAULT_PASS", _adminPassword)
-            .WithEnvironment("RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS", "+S 2:2 +A 4")
-            .WithResourceMapping(Encoding.UTF8.GetBytes("[rabbitmq_management,rabbitmq_auth_backend_oauth2].\n"), "/etc/rabbitmq/enabled_plugins")
-            .WithResourceMapping(Encoding.UTF8.GetBytes("""
-                auth_backends.1 = oauth2
-                auth_backends.2 = internal
-                auth_oauth2.resource_server_id = wolverine
-                auth_oauth2.additional_scopes_key = permissions
-                auth_oauth2.issuer = https://keycloak:8443/realms/wolverine
-                auth_oauth2.jwks_url = https://keycloak:8443/realms/wolverine/protocol/openid-connect/certs
-                auth_oauth2.https.cacertfile = /etc/rabbitmq/ca.crt
-                auth_oauth2.https.verify = verify_peer
-                loopback_users.guest = false
-                collect_statistics_interval = 1000
-                """), "/etc/rabbitmq/rabbitmq.conf")
-            .WithResourceMapping(Tls.CaPem, "/etc/rabbitmq/ca.crt")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server startup complete"))
+            .WithCommand("start-dev", "--import-realm")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Listening on: .*http://"))
             .Build();
 
         WriteTiming("Fixture construction", _constructionStarted);
     }
 
     /// <summary>
-    /// Создаёт сеть, параллельно запускает оба контейнера и ожидает фактической готовности сервисов.
+    /// Создаёт сеть, запускает Keycloak, получает публичный ключ и затем запускает RabbitMQ с проверками готовности сервисов.
     /// </summary>
     /// <remarks>
     /// При неудачном запуске собирает журналы и освобождает созданные ресурсы.
@@ -147,14 +120,13 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             var networkStarted = Stopwatch.GetTimestamp();
             await _network.CreateAsync(ct);
             WriteTiming("Network creation", networkStarted);
-            // RabbitMQ starts with in-network OAuth2 URLs. Authentication begins only after
-            // both the imported Keycloak realm and RabbitMQ management API are ready.
-            await Task.WhenAll(StartKeycloakAsync(ct), StartRabbitMqAsync(ct));
+            await StartKeycloakAsync(ct);
+            await StartRabbitMqAsync(ct);
         }
         catch
         {
             // Startup diagnostics are collected before application token requests begin.
-            foreach (var container in new[] { Keycloak, RabbitMq })
+            foreach (var container in new[] { Keycloak, _rabbitMq }.OfType<IContainer>())
             {
                 try
                 {
@@ -170,7 +142,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     }
 
     /// <summary>
-    /// Запускает Keycloak и ожидает доступности импортированного realm по HTTPS.
+    /// Запускает Keycloak и ожидает доступности импортированного realm по HTTP.
     /// </summary>
     /// <param name="ct">Токен отмены запуска и HTTP-проверок.</param>
     /// <returns>Задача готовности Keycloak.</returns>
@@ -186,7 +158,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     }
 
     /// <summary>
-    /// Запускает RabbitMQ, настраивает адрес Management API и ожидает ответа overview.
+    /// Получает публичный ключ Keycloak, запускает RabbitMQ, настраивает адрес Management API и ожидает ответа overview.
     /// </summary>
     /// <param name="ct">Токен отмены запуска и HTTP-проверок.</param>
     /// <returns>Задача готовности RabbitMQ.</returns>
@@ -195,6 +167,26 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         var started = Stopwatch.GetTimestamp();
         try
         {
+            var (kid, publicKey) = await GetSigningKeyAsync(ct);
+            _rabbitMq = new ContainerBuilder("rabbitmq:4.1.4-management")
+                .WithNetwork(_network).WithNetworkAliases("rabbitmq")
+                .WithPortBinding(5672, true).WithPortBinding(15672, true)
+                .WithEnvironment("RABBITMQ_DEFAULT_USER", "integration-admin")
+                .WithEnvironment("RABBITMQ_DEFAULT_PASS", _adminPassword)
+                .WithEnvironment("RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS", "+S 2:2 +A 4")
+                .WithResourceMapping(Encoding.UTF8.GetBytes("[rabbitmq_management,rabbitmq_auth_backend_oauth2].\n"), "/etc/rabbitmq/enabled_plugins")
+                .WithResourceMapping(Encoding.UTF8.GetBytes($"""
+                    auth_backends.1 = oauth2
+                    auth_backends.2 = internal
+                    auth_oauth2.resource_server_id = wolverine
+                    auth_oauth2.additional_scopes_key = permissions
+                    auth_oauth2.signing_keys.{kid} = /etc/rabbitmq/keycloak-public.pem
+                    loopback_users.guest = false
+                    collect_statistics_interval = 1000
+                    """), "/etc/rabbitmq/rabbitmq.conf")
+                .WithResourceMapping(publicKey, "/etc/rabbitmq/keycloak-public.pem")
+                .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server startup complete"))
+                .Build();
             await RabbitMq.StartAsync(ct);
             Management.BaseAddress = new Uri($"http://{RabbitMq.Hostname}:{RabbitMq.GetMappedPublicPort(15672)}/api/");
             await WaitUntilAsync(async () =>
@@ -209,6 +201,42 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             }, TimeSpan.FromSeconds(30), ct);
         }
         finally { WriteTiming("RabbitMQ start and readiness", started); }
+    }
+
+    /// <summary>
+    /// Получает тестовый JWT и JWKS по HTTP и экспортирует публичный RSA-ключ подписи, выбранный по kid токена.
+    /// </summary>
+    /// <param name="ct">Токен отмены HTTP-запросов.</param>
+    /// <returns>Идентификатор ключа и публичный ключ в PEM для настройки RabbitMQ.</returns>
+    private async Task<(string Kid, byte[] PublicKey)> GetSigningKeyAsync(CancellationToken ct)
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials", ["client_id"] = "wolverine", ["client_secret"] = ClientSecret
+        });
+        using var response = await http.PostAsync(TokenEndpoint, form, ct);
+        response.EnsureSuccessStatusCode();
+        using var token = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var jwt = token.RootElement.GetProperty("access_token").GetString()!;
+        using var header = JsonDocument.Parse(Base64Url.DecodeFromChars(jwt.Split('.')[0]));
+        var kid = header.RootElement.GetProperty("kid").GetString()!;
+        if (header.RootElement.GetProperty("alg").GetString() != "RS256")
+            throw new InvalidOperationException("Expected an RS256 test token from Keycloak");
+
+        using var stream = await http.GetStreamAsync(new Uri(TokenEndpoint, "certs"), ct);
+        using var jwks = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        // Match the signing token's kid: the realm also exposes keys used for encryption.
+        var key = jwks.RootElement.GetProperty("keys").EnumerateArray().Single(key =>
+            key.GetProperty("kid").GetString() == kid && key.GetProperty("kty").GetString() == "RSA"
+            && key.GetProperty("use").GetString() == "sig");
+        using var rsa = RSA.Create();
+        rsa.ImportParameters(new RSAParameters
+        {
+            Modulus = Base64Url.DecodeFromChars(key.GetProperty("n").GetString()!),
+            Exponent = Base64Url.DecodeFromChars(key.GetProperty("e").GetString()!)
+        });
+        return (kid, Encoding.UTF8.GetBytes(rsa.ExportSubjectPublicKeyInfoPem()));
     }
 
     /// <summary>
@@ -257,14 +285,14 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     }
 
     /// <summary>
-    /// Ожидает успешного HTTPS-ответа импортированного realm после запуска или возобновления Keycloak.
+    /// Ожидает успешного HTTP-ответа импортированного realm после запуска или возобновления Keycloak.
     /// </summary>
     /// <param name="ct">Токен отмены ожидания.</param>
     /// <returns>Задача ожидания доступности realm.</returns>
     public async Task WaitForKeycloakAsync(CancellationToken ct)
     {
-        using var http = new HttpClient(Tls.CreateHandler()) { Timeout = TimeSpan.FromSeconds(2) };
-        var realm = new Uri($"https://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8443)}/realms/wolverine");
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var realm = new Uri($"http://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8080)}/realms/wolverine");
         await WaitUntilAsync(async () =>
         {
             try
@@ -304,7 +332,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     }
 
     /// <summary>
-    /// Освобождает Management API клиент, оба контейнера, Docker-сеть и временный CA.
+    /// Освобождает Management API клиент, оба контейнера и Docker-сеть.
     /// </summary>
     /// <returns>Операция освобождения ресурсов окружения.</returns>
     public ValueTask DisposeAsync() => new(_disposeTask ??= DisposeCoreAsync());
@@ -317,18 +345,14 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     {
         var started = Stopwatch.GetTimestamp();
         Management.Dispose();
-        try { await RabbitMq.DisposeAsync(); }
+        try { if (_rabbitMq is not null) await _rabbitMq.DisposeAsync(); }
         finally
         {
             try { await Keycloak.DisposeAsync(); }
             finally
             {
                 try { await _network.DisposeAsync(); }
-                finally
-                {
-                    Tls.Dispose();
-                    WriteTiming("Fixture disposal", started);
-                }
+                finally { WriteTiming("Fixture disposal", started); }
             }
         }
     }

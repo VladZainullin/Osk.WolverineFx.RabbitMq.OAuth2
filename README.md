@@ -51,6 +51,8 @@ dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTes
 
 Один комплект контейнеров и одна сеть обслуживают весь класс через hooks TUnit `Before(Class)` / `After(Class)`. Шесть обычных тестов выполняются параллельно, максимум четыре одновременно, и используют JWT со сроком жизни восемь секунд. У каждого теста собственные Wolverine host, credentials provider, очередь, имя соединения, счётчики и ожидания сообщений. Общий HTTP-клиент Management API настраивается до запуска тестов; его заголовки во время тестов не изменяются.
 
+Тестовые host всегда включают `ValidateScopes` и `ValidateOnBuild`, независимо от окружения запуска. Scoped-сервис `IMessageBus` получается из отдельного async DI scope на каждый вызов `SendAndReceiveAsync`; scope освобождается после завершения отправки и проверки доставки.
+
 | Тест | Проверка |
 | --- | --- |
 | `ConnectsWithValidToken` | Wolverine открывает два AMQP-соединения с JWT Keycloak и доставляет сообщение через RabbitMQ. |

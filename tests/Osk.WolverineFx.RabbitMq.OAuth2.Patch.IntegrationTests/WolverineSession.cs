@@ -37,6 +37,11 @@ internal sealed class WolverineSession : IAsyncDisposable
         Credentials = new TrackingCredentialsProvider(
             new OAuth2ClientCredentialsProvider(ConnectionName, oauthClient), invalidToken);
         _host = Host.CreateDefaultBuilder()
+            .UseDefaultServiceProvider(options =>
+            {
+                options.ValidateScopes = true;
+                options.ValidateOnBuild = true;
+            })
             .ConfigureLogging(logging => logging.ClearProviders().SetMinimumLevel(LogLevel.Debug).AddProvider(Log))
             .UseWolverine(options =>
             {
@@ -92,6 +97,8 @@ internal sealed class WolverineSession : IAsyncDisposable
     public async Task SendAndReceiveAsync(CancellationToken ct = default, int messageCount = 1)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(messageCount);
+        await using var scope = _host.Services.CreateAsyncScope();
+        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
         // The unique queue starts at zero and only this session publishes to it.
         // Keep the last observed broker count instead of fetching it again before each send.
         var before = _deliveredMessages;
@@ -99,7 +106,7 @@ internal sealed class WolverineSession : IAsyncDisposable
         {
             var id = Guid.NewGuid();
             var received = _delivery.Expect(id);
-            await _host.Services.GetRequiredService<IMessageBus>().PublishAsync(new ProbeMessage(id));
+            await bus.PublishAsync(new ProbeMessage(id));
             await received.WaitAsync(TimeSpan.FromSeconds(15), ct);
         }
         // Prove the whole batch went through RabbitMQ, even if local routing is accidentally enabled.

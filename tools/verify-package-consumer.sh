@@ -11,12 +11,27 @@ mkdir -p "$consumer_tmp/project"
 dotnet msbuild "$repo_root/src/Osk.WolverineFx.RabbitMq.OAuth2/Osk.WolverineFx.RabbitMq.OAuth2.csproj" \
   -getProperty:PackageId,PackageVersion > "$consumer_tmp/package-properties.json"
 python3 - "$repo_root" "$consumer_tmp" <<'PY'
-import json, sys
+import json, sys, zipfile
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
+from xml.etree.ElementTree import fromstring
 
 repo, temporary = map(Path, sys.argv[1:])
 properties = json.loads((temporary / 'package-properties.json').read_text())['Properties']
+package = repo / 'artifacts' / f"{properties['PackageId']}.{properties['PackageVersion']}.nupkg"
+with zipfile.ZipFile(package) as archive:
+    required = [
+        'lib/net9.0/Osk.WolverineFx.RabbitMq.OAuth2.xml',
+        'lib/net10.0/Osk.WolverineFx.RabbitMq.OAuth2.xml',
+        'analyzers/dotnet/cs/Osk.WolverineFx.RabbitMq.OAuth2.Generator.dll',
+        'analyzers/dotnet/cs/Osk.WolverineFx.RabbitMq.OAuth2.Generator.xml',
+    ]
+    for path in required:
+        content = archive.read(path)
+        if path.endswith('.xml'):
+            document = fromstring(content)
+            assert document.find('members/member/summary') is not None, f'No XML documentation: {path}'
+print('PASS: NuGet contains both runtime XML files and the generator DLL/XML.')
 project = Element('Project', Sdk='Microsoft.NET.Sdk')
 group = SubElement(project, 'PropertyGroup')
 SubElement(group, 'OutputType').text = 'Exe'

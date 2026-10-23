@@ -16,6 +16,14 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 - Never log token values or introduce credentials into source files.
 - Use RabbitMQ.Client.OAuth2 CredentialsRefresher for refresh scheduling. The registration adapter only sends credentials to the connection and manages shutdown; do not introduce a second timer or refresh loop.
 
+## XML documentation
+
+- Every new public or internal type and member must have meaningful XML documentation. Document private methods with complex logic as well.
+- Update the corresponding XML comments whenever a signature or behavior changes; describe every parameter and any return value.
+- Keep XML documentation in Russian, including source emitted by the generator.
+- Do not ignore CS1591 or suppress it through NoWarn. Keep documentation generation and CS1591 enforcement scoped to the two library projects.
+- Preserve the runtime XML files under lib/net9.0 and lib/net10.0 and the generator DLL and XML under analyzers/dotnet/cs in the NuGet package.
+
 ## Mandatory formatting before every commit
 
 - Before every commit, Codex must run `dotnet format Osk.WolverineFx.RabbitMq.OAuth2.slnx` from the repository root. If the solution is renamed, use its actual filename.

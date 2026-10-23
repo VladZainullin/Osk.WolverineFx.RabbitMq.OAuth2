@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
     <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <Version>6.49.0</Version>
     <Description>Automatic startup patches for WolverineFx 6.49 RabbitMQ OAuth2 token refresh.</Description>
@@ -18,6 +20,7 @@
     <PackageReference Include="Lib.Harmony" />
     <ProjectReference Include="../Osk.WolverineFx.RabbitMq.OAuth2.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <None Include="../Osk.WolverineFx.RabbitMq.OAuth2.Generator/bin/$(Configuration)/netstandard2.0/Osk.WolverineFx.RabbitMq.OAuth2.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="../Osk.WolverineFx.RabbitMq.OAuth2.Generator/bin/$(Configuration)/netstandard2.0/Osk.WolverineFx.RabbitMq.OAuth2.Generator.xml" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.Tests" />
     <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests" />
   </ItemGroup>

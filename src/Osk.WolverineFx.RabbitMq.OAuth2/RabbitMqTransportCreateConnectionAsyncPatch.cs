@@ -2,7 +2,7 @@ using HarmonyLib;
 using RabbitMQ.Client;
 using Wolverine.RabbitMQ.Internal;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
+namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
 [HarmonyPatch(typeof(RabbitMqTransport), "CreateConnectionAsync")]
 internal static class RabbitMqTransportCreateConnectionAsyncPatch

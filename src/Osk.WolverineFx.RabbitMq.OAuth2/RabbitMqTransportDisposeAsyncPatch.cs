@@ -1,7 +1,7 @@
 using HarmonyLib;
 using Wolverine.RabbitMQ.Internal;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
+namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
 [HarmonyPatch(typeof(RabbitMqTransport), nameof(RabbitMqTransport.DisposeAsync))]
 internal static class RabbitMqTransportDisposeAsyncPatch

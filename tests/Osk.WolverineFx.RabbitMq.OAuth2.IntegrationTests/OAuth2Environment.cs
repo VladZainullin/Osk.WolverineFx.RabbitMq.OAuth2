@@ -8,7 +8,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
+namespace Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests;
 
 /// <summary>
 /// Владеет общей Docker-сетью, Keycloak и RabbitMQ с локальным публичным ключом для интеграционного класса.

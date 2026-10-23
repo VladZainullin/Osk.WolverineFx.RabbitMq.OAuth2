@@ -1,5 +1,5 @@
 using HarmonyLib;
-using Osk.WolverineFx.RabbitMq.OAuth2.Patch;
+using Osk.WolverineFx.RabbitMq.OAuth2;
 using Wolverine.RabbitMQ.Internal;
 
 // No explicit Install() call: the generator must install both patches before Main.

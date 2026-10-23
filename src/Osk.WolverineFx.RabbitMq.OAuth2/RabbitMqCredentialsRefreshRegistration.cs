@@ -3,7 +3,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.OAuth2;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
+namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
 // Binds the native refresh scheduler to a connection and the transport lifetime.
 internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable

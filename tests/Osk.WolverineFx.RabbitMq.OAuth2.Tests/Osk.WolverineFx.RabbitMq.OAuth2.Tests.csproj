@@ -8,6 +8,6 @@
   <ItemGroup>
     <PackageReference Include="TUnit" />
     <PackageReference Include="Moq" />
-    <ProjectReference Include="../../src/Osk.WolverineFx.RabbitMq.OAuth2.Patch/Osk.WolverineFx.RabbitMq.OAuth2.Patch.csproj" />
+    <ProjectReference Include="../../src/Osk.WolverineFx.RabbitMq.OAuth2/Osk.WolverineFx.RabbitMq.OAuth2.csproj" />
   </ItemGroup>
 </Project>

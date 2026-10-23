@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using Wolverine.RabbitMQ.Internal;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
+namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
 internal sealed class RabbitMqRefreshRegistry(ILogger logger)
 {

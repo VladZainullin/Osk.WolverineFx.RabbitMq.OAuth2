@@ -2,7 +2,7 @@ using System.Diagnostics;
 using RabbitMQ.Client.Exceptions;
 using TUnit.Core.Interfaces;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
+namespace Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests;
 
 /// <summary>
 /// Проверяет аутентификацию, обновление JWT и завершение работы Wolverine на настоящих Keycloak и RabbitMQ.

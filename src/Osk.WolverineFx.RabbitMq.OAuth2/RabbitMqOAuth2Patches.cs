@@ -1,11 +1,11 @@
 using HarmonyLib;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch;
+namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
 /// <summary>Installs the two process-wide Harmony patches. Repeated calls are safe.</summary>
 public static class RabbitMqOAuth2Patches
 {
-    public const string HarmonyId = "Osk.WolverineFx.RabbitMq.OAuth2.Patch";
+    public const string HarmonyId = "Osk.WolverineFx.RabbitMq.OAuth2";
     private static readonly Lock Sync = new();
     private static bool _installed;
 

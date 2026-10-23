@@ -6,7 +6,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Wolverine.RabbitMQ.Internal;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests;
+namespace Osk.WolverineFx.RabbitMq.OAuth2.Tests;
 
 /// <summary>
 /// Проверяет Harmony-патчи и жизненный цикл обновления credentials на подставных AMQP-соединениях.

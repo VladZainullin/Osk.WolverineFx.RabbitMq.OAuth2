@@ -8,7 +8,7 @@ trap 'rm -rf "$consumer_tmp"' EXIT
 # A fresh cache prevents a previously packed version from masking package changes.
 export NUGET_PACKAGES="$consumer_tmp/packages"
 mkdir -p "$consumer_tmp/project"
-dotnet msbuild "$repo_root/src/Osk.WolverineFx.RabbitMq.OAuth2.Patch/Osk.WolverineFx.RabbitMq.OAuth2.Patch.csproj" \
+dotnet msbuild "$repo_root/src/Osk.WolverineFx.RabbitMq.OAuth2/Osk.WolverineFx.RabbitMq.OAuth2.csproj" \
   -getProperty:PackageId,PackageVersion > "$consumer_tmp/package-properties.json"
 python3 - "$repo_root" "$consumer_tmp" <<'PY'
 import json, sys

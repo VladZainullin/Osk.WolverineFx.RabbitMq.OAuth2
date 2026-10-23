@@ -19,12 +19,12 @@ This repository provides an automatic startup patch package for WolverineFx.Rabb
 Run from the repository root:
 
 ```sh
-dotnet build Osk.WolverineFx.RabbitMq.OAuth2.Patch.slnx -c Release
+dotnet build Osk.WolverineFx.RabbitMq.OAuth2.slnx -c Release
 dotnet run --project samples/StartupSmoke -c Release
-dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests -c Release
-dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2.Patch -c Release -o artifacts
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Tests -c Release
+dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2 -c Release -o artifacts
 bash tools/verify-package-consumer.sh
-dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests -c Release
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests -c Release
 ```
 
 Tests use TUnit and the Microsoft Testing Platform runner selected in global.json. Preserve the `--project` option for .NET 10 MTP commands; do not add xUnit or VSTest adapters. Process-wide Harmony registration tests must remain nonparallel.

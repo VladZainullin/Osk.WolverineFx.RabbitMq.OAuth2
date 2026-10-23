@@ -1,9 +1,9 @@
-# Osk.WolverineFx.RabbitMq.OAuth2.Patch
+# Osk.WolverineFx.RabbitMq.OAuth2
 
 NuGet-библиотека для WolverineFx.RabbitMQ **6.49.0** и приложений .NET 9/10. Устанавливает два Harmony-патча автоматически при загрузке модуля приложения: после создания RabbitMQ-соединения запускает обновление OAuth2-токена, при остановке транспорта отменяет обновление и освобождает регистрацию.
 
 ```xml
-<PackageReference Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch" Version="6.49.0" />
+<PackageReference Include="Osk.WolverineFx.RabbitMq.OAuth2" Version="6.49.0" />
 ```
 
 Для установки патчей достаточно этой ссылки на пакет в запускаемом C#-проекте. Дополнительные свойства MSBuild и вызовы регистрации не нужны. Source generator внутри пакета создаёт `ModuleInitializer`, вызывающий `RabbitMqOAuth2Patches.Install()` автоматически. Повторный вызов безопасен.
@@ -21,10 +21,10 @@ NuGet-библиотека для WolverineFx.RabbitMQ **6.49.0** и прило�
 ## Разработка
 
 ```sh
-dotnet build Osk.WolverineFx.RabbitMq.OAuth2.Patch.slnx -c Release
+dotnet build Osk.WolverineFx.RabbitMq.OAuth2.slnx -c Release
 dotnet run --project samples/StartupSmoke -c Release
-dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests -c Release
-dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2.Patch -c Release -o artifacts
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Tests -c Release
+dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2 -c Release -o artifacts
 bash tools/verify-package-consumer.sh
 ```
 
@@ -38,13 +38,13 @@ SDK и тестовый runner Microsoft Testing Platform закреплены �
 
 ```sh
 # Все семь сценариев, включая медленный тест недоступности Keycloak
-dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests -c Release
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests -c Release
 
 # Шесть обычных сценариев
-dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests -c Release --treenode-filter '/*/*/*/*[Category!=Slow]'
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests -c Release --treenode-filter '/*/*/*/*[Category!=Slow]'
 
 # Только фактическая недоступность Keycloak
-dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests -c Release --treenode-filter '/*/*/*/*[Category=Slow]'
+dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests -c Release --treenode-filter '/*/*/*/*[Category=Slow]'
 ```
 
 Нужны работающий локальный Docker Engine и доступ к Docker Hub и quay.io для первого скачивания образов. Testcontainers 4.16.0 сначала запускает Keycloak `26.1.4` в режиме `start-dev` по HTTP на контейнерном порту `8080`, импортирует realm и service-account client. Затем fixture запрашивает тестовый JWT и JWKS по HTTP, выбирает RSA-ключ подписи по `kid` из заголовка токена и преобразует его публичные параметры в PEM. Только после этого запускается RabbitMQ `4.1.4-management`: Testcontainers копирует публичный ключ в контейнер, а `auth_oauth2.signing_keys.<kid>` задаёт его для настоящей проверки JWT. Брокер не использует `auth_oauth2.issuer` и `auth_oauth2.jwks_url`; локальный публичный ключ заменяет получение JWKS через HTTPS.

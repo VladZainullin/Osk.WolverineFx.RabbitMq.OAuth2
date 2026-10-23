@@ -16,9 +16,9 @@
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="RabbitMQ.Client.OAuth2" />
     <PackageReference Include="Lib.Harmony" />
-    <ProjectReference Include="../Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
-    <None Include="../Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator/bin/$(Configuration)/netstandard2.0/Osk.WolverineFx.RabbitMq.OAuth2.Patch.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests" />
-    <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests" />
+    <ProjectReference Include="../Osk.WolverineFx.RabbitMq.OAuth2.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <None Include="../Osk.WolverineFx.RabbitMq.OAuth2.Generator/bin/$(Configuration)/netstandard2.0/Osk.WolverineFx.RabbitMq.OAuth2.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.Tests" />
+    <InternalsVisibleTo Include="Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests" />
   </ItemGroup>
 </Project>

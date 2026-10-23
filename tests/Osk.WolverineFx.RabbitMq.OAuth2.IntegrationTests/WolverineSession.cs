@@ -12,7 +12,7 @@ using Wolverine.RabbitMQ;
 using Wolverine.RabbitMQ.Internal;
 using Wolverine.Runtime;
 
-namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
+namespace Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests;
 
 /// <summary>
 /// Изолирует host Wolverine, AMQP-ресурсы, credentials и ожидания доставки одного интеграционного теста.

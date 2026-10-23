@@ -91,11 +91,9 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
     {
         lock (_sync)
         {
-            if (_disposeTask is null)
-            {
-                Cancel();
-                _disposeTask = Task.Run(DisposeRefresher);
-            }
+            if (_disposeTask is not null) return new ValueTask(_disposeTask);
+            Cancel();
+            _disposeTask = Task.Run(DisposeRefresher);
             return new ValueTask(_disposeTask);
         }
     }
@@ -105,7 +103,8 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         try { _refresher.Dispose(); }
         // OAuth2 2.0.0 throws an aggregate if cancellation interrupts its delay.
         catch (AggregateException ex) when (_cts.IsCancellationRequested &&
-            ex.Flatten().InnerExceptions.All(e => e is OperationCanceledException)) { }
+            ex.Flatten().InnerExceptions.All(e => e is OperationCanceledException))
+        { }
         finally
         {
             _cts.Dispose();

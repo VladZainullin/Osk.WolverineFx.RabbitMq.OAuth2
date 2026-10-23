@@ -58,7 +58,9 @@ internal sealed class OAuth2Environment : IAsyncDisposable
 
         var realm = JsonSerializer.SerializeToUtf8Bytes(new
         {
-            realm = "wolverine", enabled = true, accessTokenLifespan = TokenLifetimeSeconds,
+            realm = "wolverine",
+            enabled = true,
+            accessTokenLifespan = TokenLifetimeSeconds,
             clients = new[]
             {
                 new
@@ -213,7 +215,9 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["grant_type"] = "client_credentials", ["client_id"] = "wolverine", ["client_secret"] = ClientSecret
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = "wolverine",
+            ["client_secret"] = ClientSecret
         });
         using var response = await http.PostAsync(TokenEndpoint, form, cancellationToken);
         response.EnsureSuccessStatusCode();

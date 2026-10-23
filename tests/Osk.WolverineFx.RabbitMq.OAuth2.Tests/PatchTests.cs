@@ -46,7 +46,7 @@ public class PatchTests
         connection.SetupGet(x => x.IsOpen).Returns(true);
         var updated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken cancellationToken) => { updated.TrySetResult(token); return Task.CompletedTask; });
+            .Returns((string token, string _, CancellationToken _) => { updated.TrySetResult(token); return Task.CompletedTask; });
         var provider = Provider("new-token", TimeSpan.FromMilliseconds(150));
         typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
             .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
@@ -57,7 +57,7 @@ public class PatchTests
         await Assert.That(await updated.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("new-token");
         await transport.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
-        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<RabbitMQ.Client.Events.AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
     }
 
     /// <summary>
@@ -166,7 +166,7 @@ public class PatchTests
         connection.SetupGet(x => x.IsOpen).Returns(true);
         var recovered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken cancellationToken) =>
+            .Returns((string token, string _, CancellationToken _) =>
             {
                 if (token == "recovered-token")
                 {
@@ -207,7 +207,7 @@ public class PatchTests
         var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var updates = 0;
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken cancellationToken) =>
+            .Returns((string _, string _, CancellationToken _) =>
             {
                 if (Interlocked.Increment(ref updates) == 1)
                 {
@@ -365,9 +365,8 @@ public class PatchTests
         await Assert.That(actual).IsSameReferenceAs(failure);
         connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
         // Moq returns null when the event has no subscribers after cleanup.
-        await (connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
-            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"))
-            ?? Task.CompletedTask);
+        await connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
+            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"));
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -414,9 +413,9 @@ public class PatchTests
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string token, string reason, CancellationToken cancellationToken) =>
+            .Returns(async (string _, string _, CancellationToken cancellationToken) =>
             {
-                using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
+                await using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
                 entered.TrySetResult();
                 await release.Task;
                 cancellationToken.ThrowIfCancellationRequested();
@@ -432,7 +431,7 @@ public class PatchTests
             await Assert.That(disposals.All(task => !task.IsCompleted)).IsTrue();
             release.TrySetResult();
             await Task.WhenAll(disposals).WaitAsync(TimeSpan.FromSeconds(10));
-            connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<RabbitMQ.Client.Events.AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+            connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
         }
         finally
         {

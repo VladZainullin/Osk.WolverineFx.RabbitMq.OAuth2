@@ -42,7 +42,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <summary>
     /// HTTP-клиент Management API с административными credentials для наблюдения состояния брокера.
     /// </summary>
-    public HttpClient Management { get; } = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private HttpClient Management { get; } = new() { Timeout = TimeSpan.FromSeconds(10) };
     /// <summary>
     /// HTTP-адрес выдачи токенов через динамический публичный порт запущенного Keycloak.
     /// </summary>

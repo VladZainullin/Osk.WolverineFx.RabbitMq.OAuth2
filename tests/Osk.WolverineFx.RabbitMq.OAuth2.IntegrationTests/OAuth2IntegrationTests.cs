@@ -302,14 +302,20 @@ public sealed class OAuth2IntegrationTests
     /// <returns>Последовательность всех исключений в цепочке причин.</returns>
     private static IEnumerable<Exception> ExceptionChain(Exception exception)
     {
-        yield return exception;
-        if (exception is AggregateException aggregate)
+        while (true)
         {
-            foreach (var inner in aggregate.InnerExceptions.SelectMany(ExceptionChain)) yield return inner;
-        }
-        else if (exception.InnerException is { } inner)
-        {
-            foreach (var nested in ExceptionChain(inner)) yield return nested;
+            yield return exception;
+            if (exception is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions.SelectMany(ExceptionChain)) yield return inner;
+            }
+            else if (exception.InnerException is { } inner)
+            {
+                exception = inner;
+                continue;
+            }
+
+            break;
         }
     }
 }

@@ -8,10 +8,19 @@ using Wolverine.RabbitMQ.Internal;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.Tests;
 
-// Harmony changes process-wide method state, so these tests run sequentially.
+/// <summary>
+/// Проверяет Harmony-патчи и жизненный цикл обновления credentials на подставных AMQP-соединениях.
+/// </summary>
+/// <remarks>
+/// Вызовы установки патчей меняют состояние методов во всём процессе, поэтому класс выполняется последовательно.
+/// </remarks>
 [NotInParallel]
 public class PatchTests
 {
+    /// <summary>
+    /// Проверяет идемпотентную установку единственного postfix создания соединения и пары prefix/postfix освобождения транспорта.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task InstallsBothPatchesExactlyOnce()
     {
@@ -24,6 +33,10 @@ public class PatchTests
         await Assert.That(Harmony.GetPatchInfo(dispose)!.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
     }
 
+    /// <summary>
+    /// Проверяет передачу нового токена созданному соединению и освобождение refresh-регистрации через patched DisposeAsync транспорта.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task CreatedConnectionRefreshesAndPatchedTransportDisposalStopsWorker()
     {
@@ -47,6 +60,10 @@ public class PatchTests
         connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<RabbitMQ.Client.Events.AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
     }
 
+    /// <summary>
+    /// Проверяет, что соединения с BasicCredentialsProvider сохраняют исходную задачу создания без OAuth2-обёртки.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task PasswordOnlyConnectionIsNotWrapped()
     {
@@ -59,6 +76,10 @@ public class PatchTests
         await Assert.That((object)result).IsSameReferenceAs(original);
     }
 
+    /// <summary>
+    /// Проверяет сохранение исходной ошибки создания соединения без обращения к credentials provider.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task FailedConnectionDoesNotRequestCredentials()
     {
@@ -72,6 +93,10 @@ public class PatchTests
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Проверяет регистрацию ошибки пустого токена, отсутствие вызова UpdateSecretAsync и завершение освобождения refresher.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task EmptyTokenIsNotSentAndDisposalStopsRefresher()
     {
@@ -92,6 +117,10 @@ public class PatchTests
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Проверяет передачу соединению последовательно полученных токенов при повторных циклах штатного refresher.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task PeriodicRefreshesSendEachNewToken()
     {
@@ -126,6 +155,10 @@ public class PatchTests
         await Assert.That(await secondUpdate.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("token-2");
     }
 
+    /// <summary>
+    /// Проверяет логирование ошибки credentials provider и успешную передачу токена при следующей попытке.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task ProviderFailureIsLoggedAndLaterRefreshContinues()
     {
@@ -161,6 +194,10 @@ public class PatchTests
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.AtLeast(3));
     }
 
+    /// <summary>
+    /// Проверяет логирование ошибки UpdateSecretAsync и успешное продолжение последующих обновлений.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task SecretUpdateFailureIsLoggedAndLaterRefreshContinues()
     {
@@ -190,6 +227,10 @@ public class PatchTests
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
     }
 
+    /// <summary>
+    /// Проверяет освобождение поздно созданного соединения после остановки транспорта без запуска обновления credentials.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task ConnectionCompletedAfterTransportDisposalIsDisposedWithoutRefreshing()
     {
@@ -211,6 +252,10 @@ public class PatchTests
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Проверяет отмену активного запроса credentials и снятие подписки при закрытии соединения приложением.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task ApplicationShutdownCancelsOutstandingCredentialsRequest()
     {
@@ -240,6 +285,10 @@ public class PatchTests
         connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<RabbitMQ.Client.Events.AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
     }
 
+    /// <summary>
+    /// Проверяет обработку ожидаемой отмены штатного refresher во время задержки без ошибки DisposeAsync.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task CancellationDuringRefreshDelayDoesNotEscapeDisposal()
     {
@@ -262,6 +311,10 @@ public class PatchTests
         provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>
+    /// Проверяет отсутствие UpdateSecretAsync у закрытого соединения, даже когда provider продолжает выдавать credentials.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task ClosedConnectionDoesNotReceiveSecretUpdates()
     {
@@ -288,6 +341,10 @@ public class PatchTests
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Проверяет снятие shutdown-подписки и сохранение исходной ошибки при неудачной инициализации refresh-регистрации.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task FailedInitializationRemovesShutdownSubscription()
     {
@@ -314,6 +371,10 @@ public class PatchTests
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Проверяет завершение refresher и отмену активного запроса, когда освобождённое соединение запрещает отписку от события.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task AlreadyDisposedConnectionDoesNotPreventRefreshCleanup()
     {
@@ -340,6 +401,10 @@ public class PatchTests
         connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
     }
 
+    /// <summary>
+    /// Проверяет, что параллельные вызовы DisposeAsync ожидают незавершённый UpdateSecretAsync и снимают shutdown-подписку ровно один раз.
+    /// </summary>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task ConcurrentDisposalsWaitForInFlightUpdateAndUnsubscribeOnce()
     {
@@ -375,6 +440,12 @@ public class PatchTests
         }
     }
 
+    /// <summary>
+    /// Создаёт подставной provider с заданными токеном и относительным сроком действия credentials.
+    /// </summary>
+    /// <param name="token">Значение тестового токена.</param>
+    /// <param name="validUntil">Относительный срок действия; при отсутствии значения используется одна минута.</param>
+    /// <returns>Mock, возвращающий заданные credentials при каждом запросе.</returns>
     private static Mock<ICredentialsProvider> Provider(string token, TimeSpan? validUntil = null)
     {
         var provider = new Mock<ICredentialsProvider>();
@@ -383,14 +454,23 @@ public class PatchTests
         return provider;
     }
 
+    /// <summary>
+    /// Фиксирует первое сообщение уровня Error для ожидания диагностического события без задержек.
+    /// </summary>
     private sealed class ErrorLogger : ILogger
     {
+        /// <summary>
+        /// Источник завершения с исключением первого сообщения уровня Error либо null, если исключения нет.
+        /// </summary>
         public TaskCompletionSource<Exception?> Error { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        /// <inheritdoc/>
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
+        /// <inheritdoc/>
         public bool IsEnabled(LogLevel logLevel) => true;
 
+        /// <inheritdoc/>
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             if (logLevel == LogLevel.Error)

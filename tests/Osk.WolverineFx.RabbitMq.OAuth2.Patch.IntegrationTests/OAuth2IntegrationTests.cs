@@ -4,6 +4,12 @@ using TUnit.Core.Interfaces;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
 
+/// <summary>
+/// Проверяет аутентификацию, обновление JWT и завершение работы Wolverine на настоящих Keycloak и RabbitMQ.
+/// </summary>
+/// <remarks>
+/// Контейнеры и сеть общие для класса; host, очереди, providers и ожидания сообщений принадлежат отдельным тестам. Обычные сценарии выполняются с лимитом четыре, а недоступность общего Keycloak проверяется эксклюзивно.
+/// </remarks>
 [ParallelLimiter<OAuth2ParallelLimit>]
 [Category("Integration")]
 [Timeout(180_000)]
@@ -14,6 +20,11 @@ public sealed class OAuth2IntegrationTests
     private readonly Stopwatch _duration = new();
     private static OAuth2Environment Environment => _environment ?? throw new InvalidOperationException("Containers have not started");
 
+    /// <summary>
+    /// Создаёт общую инфраструктуру класса и ожидает готовности обоих сервисов.
+    /// </summary>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
+    /// <returns>Задача запуска контейнеров и readiness-проверок.</returns>
     [Before(HookType.Class)]
     [Timeout(300_000)]
     public static async Task StartContainers(CancellationToken ct)
@@ -22,6 +33,11 @@ public sealed class OAuth2IntegrationTests
         await _environment.StartAsync(ct);
     }
 
+    /// <summary>
+    /// Освобождает общую инфраструктуру после всех тестов и выводит достигнутый параллелизм.
+    /// </summary>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
+    /// <returns>Задача освобождения контейнеров, сети, HTTP-клиента и сертификатов.</returns>
     [After(HookType.Class)]
     public static async Task StopContainers(CancellationToken ct)
     {
@@ -29,6 +45,11 @@ public sealed class OAuth2IntegrationTests
         Console.WriteLine($"[timing] maximum parallel tests: {_maximumParallelTests}");
     }
 
+    /// <summary>
+    /// Начинает замер теста и потокобезопасно обновляет число одновременно выполняющихся сценариев.
+    /// </summary>
+    /// <param name="context">Контекст TUnit с именем текущего теста.</param>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
     [Before(HookType.Test)]
     public void RecordTestStart(TestContext context, CancellationToken ct)
     {
@@ -43,6 +64,11 @@ public sealed class OAuth2IntegrationTests
         Console.WriteLine($"[timing] test {context.Metadata.TestName} start: {DateTimeOffset.UtcNow:O}; active: {active}");
     }
 
+    /// <summary>
+    /// Завершает замер теста и уменьшает счётчик активных сценариев.
+    /// </summary>
+    /// <param name="context">Контекст TUnit с именем завершённого теста.</param>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для hook.</param>
     [After(HookType.Test)]
     public void RecordTestEnd(TestContext context, CancellationToken ct)
     {
@@ -51,6 +77,11 @@ public sealed class OAuth2IntegrationTests
         Console.WriteLine($"[timing] test {context.Metadata.TestName}: {_duration.Elapsed.TotalMilliseconds:F0} ms");
     }
 
+    /// <summary>
+    /// Проверяет открытие двух AMQP-соединений с JWT Keycloak и доставку сообщения через RabbitMQ.
+    /// </summary>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task ConnectsWithValidToken(CancellationToken ct)
     {
@@ -62,6 +93,14 @@ public sealed class OAuth2IntegrationTests
         await Assert.That((await Environment.ConnectionIdsAsync(session.ConnectionName)).Length).IsEqualTo(2);
     }
 
+    /// <summary>
+    /// Проверяет отказ аутентификации при изменённой подписи JWT и отсутствие оставшихся соединений.
+    /// </summary>
+    /// <remarks>
+    /// Payload, audience и срок действия токена сохраняются; изменяется только подпись. Успешных обновлений credentials быть не должно.
+    /// </remarks>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task RejectsInvalidToken(CancellationToken ct)
     {
@@ -73,6 +112,14 @@ public sealed class OAuth2IntegrationTests
         await Assert.That(session.Log.Successes).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// Проверяет успешное обновление credentials и доставку трёх сообщений после истечения первоначального JWT.
+    /// </summary>
+    /// <remarks>
+    /// Для каждого сообщения ожидается собственный ID в обработчике; статистика брокера должна подтвердить доставку всей группы.
+    /// </remarks>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task RefreshesExpiredToken(CancellationToken ct)
     {
@@ -86,6 +133,14 @@ public sealed class OAuth2IntegrationTests
         await session.SendAndReceiveAsync(ct, messageCount: 3);
     }
 
+    /// <summary>
+    /// Проверяет, что обновление JWT и доставка после исходного срока действия сохраняют оба AMQP-соединения.
+    /// </summary>
+    /// <remarks>
+    /// Сравниваются имена и время установки соединений в Management API: повторное подключение изменит их идентификаторы.
+    /// </remarks>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task PreservesConnectionAfterRefresh(CancellationToken ct)
     {
@@ -103,6 +158,14 @@ public sealed class OAuth2IntegrationTests
         await Assert.That(after.SequenceEqual(before)).IsTrue();
     }
 
+    /// <summary>
+    /// Проверяет восстановление обновления JWT и доставки после управляемого отказа credentials provider.
+    /// </summary>
+    /// <remarks>
+    /// Ошибка включается только у provider текущей сессии, до обращения к Keycloak. Реальная недоступность сервиса проверяется отдельно в <see cref="RecoversAfterKeycloakOutage"/>.
+    /// </remarks>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task RecoversAfterTokenEndpointFailure(CancellationToken ct)
     {
@@ -128,6 +191,14 @@ public sealed class OAuth2IntegrationTests
         await session.SendAndReceiveAsync(ct);
     }
 
+    /// <summary>
+    /// Проверяет восстановление обновления JWT и доставки после фактической недоступности token endpoint Keycloak.
+    /// </summary>
+    /// <remarks>
+    /// Docker Pause/Unpause сохраняет назначенный порт и делает общий endpoint недоступным. Сценарий категории Slow выполняется эксклюзивно и перед публикацией ожидает обновлений токена, соединений и consumer своей очереди; перезапуск JVM здесь не проверяется.
+    /// </remarks>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     [Category("Slow")]
     [NotInParallel]
@@ -164,6 +235,14 @@ public sealed class OAuth2IntegrationTests
         await session.SendAndReceiveAsync(ct);
     }
 
+    /// <summary>
+    /// Проверяет завершение задач refresher, отсутствие активных запросов credentials и закрытие AMQP-соединений после Dispose.
+    /// </summary>
+    /// <remarks>
+    /// Worker ожидает получение credentials и callback с UpdateSecretAsync. Его завершение исключает незавершённые обновления и будущие попытки, поэтому ожидание двух TTL не требуется.
+    /// </remarks>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача выполнения проверки.</returns>
     [Test]
     public async Task StopsRefreshingAfterDispose(CancellationToken ct)
     {
@@ -187,6 +266,15 @@ public sealed class OAuth2IntegrationTests
         await Assert.That(session.Credentials.ActiveRequests).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// Ожидает пересечения срока действия первого JWT по целым секундам.
+    /// </summary>
+    /// <remarks>
+    /// JWT и часы брокера имеют секундную точность; дополнительная произвольная задержка не используется.
+    /// </remarks>
+    /// <param name="session">Сессия с зафиксированным сроком действия первого токена.</param>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача ожидания фактического истечения исходного JWT.</returns>
     private static async Task WaitPastInitialExpiryAsync(WolverineSession session, CancellationToken ct)
     {
         // JWT exp and the broker's clock have whole-second precision. Cross that
@@ -197,10 +285,21 @@ public sealed class OAuth2IntegrationTests
         await Assert.That(DateTimeOffset.UtcNow > session.Credentials.FirstExpiration).IsTrue();
     }
 
+    /// <summary>
+    /// Ожидает регистрации в Management API двух соединений указанной сессии.
+    /// </summary>
+    /// <param name="session">Сессия с уникальным именем AMQP-соединений.</param>
+    /// <param name="ct">Токен отмены, предоставленный TUnit для выполнения проверки.</param>
+    /// <returns>Задача ожидания готовности обоих соединений.</returns>
     private static Task WaitForConnectionsAsync(WolverineSession session, CancellationToken ct) =>
         OAuth2Environment.WaitUntilAsync(async () => (await Environment.ConnectionIdsAsync(session.ConnectionName)).Length == 2,
             TimeSpan.FromSeconds(15), ct);
 
+    /// <summary>
+    /// Перечисляет исходное исключение и вложенные причины, разворачивая AggregateException.
+    /// </summary>
+    /// <param name="exception">Исключение, причины которого требуется проверить.</param>
+    /// <returns>Последовательность всех исключений в цепочке причин.</returns>
     private static IEnumerable<Exception> ExceptionChain(Exception exception)
     {
         yield return exception;
@@ -215,7 +314,13 @@ public sealed class OAuth2IntegrationTests
     }
 }
 
+/// <summary>
+/// Задаёт общий лимит одновременного выполнения обычных OAuth2-сценариев.
+/// </summary>
 public sealed class OAuth2ParallelLimit : IParallelLimit
 {
+    /// <summary>
+    /// Максимальное число одновременно выполняемых тестов: четыре.
+    /// </summary>
     public int Limit => 4;
 }

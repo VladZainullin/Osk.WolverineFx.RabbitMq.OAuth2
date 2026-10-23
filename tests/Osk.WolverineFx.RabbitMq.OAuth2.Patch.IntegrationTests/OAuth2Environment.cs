@@ -8,20 +8,50 @@ using DotNet.Testcontainers.Networks;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
 
+/// <summary>
+/// Владеет общей Docker-сетью, Keycloak, RabbitMQ и временным TLS-доверием для интеграционного класса.
+/// </summary>
+/// <remarks>
+/// Контейнеры используют динамические публичные порты. Management API настраивается до старта тестов и допускает параллельные запросы без изменения заголовков.
+/// </remarks>
 internal sealed class OAuth2Environment : IAsyncDisposable
 {
+    /// <summary>
+    /// Срок действия JWT, выдаваемых тестовым realm Keycloak, в секундах.
+    /// </summary>
     public const int TokenLifetimeSeconds = 8;
     private readonly long _constructionStarted = Stopwatch.GetTimestamp();
     private readonly INetwork _network = new NetworkBuilder().Build();
+    /// <summary>
+    /// Временный CA и сертификаты, принадлежащие этому окружению.
+    /// </summary>
     public TestTls Tls { get; } = new();
     private readonly string _adminPassword = Guid.NewGuid().ToString("N");
     private Task? _disposeTask;
+    /// <summary>
+    /// Сгенерированный secret общего service-account client; значение не должно попадать в журналы.
+    /// </summary>
     public string ClientSecret { get; } = Guid.NewGuid().ToString("N");
+    /// <summary>
+    /// Общий контейнер Keycloak; обычные тесты не изменяют его состояние.
+    /// </summary>
     public IContainer Keycloak { get; }
+    /// <summary>
+    /// Общий контейнер RabbitMQ с OAuth2 backend и Management API.
+    /// </summary>
     public IContainer RabbitMq { get; }
+    /// <summary>
+    /// HTTP-клиент Management API с административными credentials для наблюдения состояния брокера.
+    /// </summary>
     public HttpClient Management { get; } = new() { Timeout = TimeSpan.FromSeconds(10) };
+    /// <summary>
+    /// HTTPS-адрес выдачи токенов через динамический публичный порт запущенного Keycloak.
+    /// </summary>
     public Uri TokenEndpoint => new($"https://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8443)}/realms/wolverine/protocol/openid-connect/token");
 
+    /// <summary>
+    /// Генерирует тестовые credentials и TLS-материалы и описывает контейнеры без их запуска.
+    /// </summary>
     public OAuth2Environment()
     {
         Management.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
@@ -101,6 +131,14 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         WriteTiming("Fixture construction", _constructionStarted);
     }
 
+    /// <summary>
+    /// Создаёт сеть, параллельно запускает оба контейнера и ожидает фактической готовности сервисов.
+    /// </summary>
+    /// <remarks>
+    /// При неудачном запуске собирает журналы и освобождает созданные ресурсы.
+    /// </remarks>
+    /// <param name="ct">Токен отмены запуска и readiness-проверок.</param>
+    /// <returns>Задача подготовки окружения к выполнению тестов.</returns>
     public async Task StartAsync(CancellationToken ct)
     {
         var started = Stopwatch.GetTimestamp();
@@ -131,6 +169,11 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         finally { WriteTiming("Fixture startup", started); }
     }
 
+    /// <summary>
+    /// Запускает Keycloak и ожидает доступности импортированного realm по HTTPS.
+    /// </summary>
+    /// <param name="ct">Токен отмены запуска и HTTP-проверок.</param>
+    /// <returns>Задача готовности Keycloak.</returns>
     private async Task StartKeycloakAsync(CancellationToken ct)
     {
         var started = Stopwatch.GetTimestamp();
@@ -142,6 +185,11 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         finally { WriteTiming("Keycloak start and readiness", started); }
     }
 
+    /// <summary>
+    /// Запускает RabbitMQ, настраивает адрес Management API и ожидает ответа overview.
+    /// </summary>
+    /// <param name="ct">Токен отмены запуска и HTTP-проверок.</param>
+    /// <returns>Задача готовности RabbitMQ.</returns>
     private async Task StartRabbitMqAsync(CancellationToken ct)
     {
         var started = Stopwatch.GetTimestamp();
@@ -163,6 +211,11 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         finally { WriteTiming("RabbitMQ start and readiness", started); }
     }
 
+    /// <summary>
+    /// Возвращает идентификаторы брокерных соединений с указанным ClientProvidedName.
+    /// </summary>
+    /// <param name="connectionName">Общее клиентское имя соединений одной тестовой сессии.</param>
+    /// <returns>Отсортированные комбинации имени соединения и connected_at, позволяющие обнаружить повторное подключение.</returns>
     public async Task<string[]> ConnectionIdsAsync(string connectionName)
     {
         using var response = await Management.GetAsync("connections");
@@ -174,6 +227,12 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             .Order().ToArray();
     }
 
+    /// <summary>
+    /// Читает накопительный счётчик deliver_get указанной очереди через Management API.
+    /// </summary>
+    /// <param name="queue">Имя очереди в виртуальном хосте по умолчанию.</param>
+    /// <param name="ct">Токен отмены HTTP-запроса.</param>
+    /// <returns>Число доставок или ноль, если брокер ещё не опубликовал message_stats.</returns>
     public async Task<long> DeliveredMessagesAsync(string queue, CancellationToken ct)
     {
         using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", ct);
@@ -183,6 +242,12 @@ internal sealed class OAuth2Environment : IAsyncDisposable
             ? deliveries.GetInt64() : 0;
     }
 
+    /// <summary>
+    /// Читает число consumers указанной очереди через Management API.
+    /// </summary>
+    /// <param name="queue">Имя очереди в виртуальном хосте по умолчанию.</param>
+    /// <param name="ct">Токен отмены HTTP-запроса.</param>
+    /// <returns>Число consumers по последней доступной статистике брокера.</returns>
     public async Task<int> ConsumerCountAsync(string queue, CancellationToken ct)
     {
         using var response = await Management.GetAsync($"queues/%2F/{Uri.EscapeDataString(queue)}", ct);
@@ -191,6 +256,11 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         return json.RootElement.GetProperty("consumers").GetInt32();
     }
 
+    /// <summary>
+    /// Ожидает успешного HTTPS-ответа импортированного realm после запуска или возобновления Keycloak.
+    /// </summary>
+    /// <param name="ct">Токен отмены ожидания.</param>
+    /// <returns>Задача ожидания доступности realm.</returns>
     public async Task WaitForKeycloakAsync(CancellationToken ct)
     {
         using var http = new HttpClient(Tls.CreateHandler()) { Timeout = TimeSpan.FromSeconds(2) };
@@ -207,6 +277,18 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         }, TimeSpan.FromSeconds(90), ct);
     }
 
+    /// <summary>
+    /// Повторяет асинхронную проверку наблюдаемого состояния до успеха, отмены или истечения бюджета.
+    /// </summary>
+    /// <remarks>
+    /// Проверки разделены интервалом 100 мс. Делегат должен самостоятельно ограничивать длительность своих асинхронных операций.
+    /// </remarks>
+    /// <param name="condition">Проверка, возвращающая true при достижении нужного состояния.</param>
+    /// <param name="timeout">Бюджет ожидания между проверками.</param>
+    /// <param name="ct">Внешний токен отмены ожидания.</param>
+    /// <returns>Задача, завершающаяся после успешной проверки.</returns>
+    /// <exception cref="TimeoutException">Условие не достигнуто до истечения бюджета ожидания.</exception>
+    /// <exception cref="OperationCanceledException">Ожидание прервано внешним токеном отмены.</exception>
     public static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct = default)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -221,8 +303,16 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Освобождает Management API клиент, оба контейнера, Docker-сеть и временный CA.
+    /// </summary>
+    /// <returns>Операция освобождения ресурсов окружения.</returns>
     public ValueTask DisposeAsync() => new(_disposeTask ??= DisposeCoreAsync());
 
+    /// <summary>
+    /// Освобождает все принадлежащие окружению ресурсы, сохраняя очистку остальных при ошибке одного из этапов.
+    /// </summary>
+    /// <returns>Задача последовательного освобождения ресурсов.</returns>
     private async Task DisposeCoreAsync()
     {
         var started = Stopwatch.GetTimestamp();
@@ -243,6 +333,11 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Выводит длительность этапа инфраструктуры без значений credentials.
+    /// </summary>
+    /// <param name="phase">Название измеряемого этапа.</param>
+    /// <param name="started">Начальная метка Stopwatch.</param>
     private static void WriteTiming(string phase, long started) =>
         Console.WriteLine($"[integration timing] {phase}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
 }

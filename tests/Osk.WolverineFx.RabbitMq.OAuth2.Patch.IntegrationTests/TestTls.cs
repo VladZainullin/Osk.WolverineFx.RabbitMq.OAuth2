@@ -5,14 +5,31 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Patch.IntegrationTests;
 
-// An isolated ephemeral CA; neither the OS trust store nor TLS checks are changed.
+/// <summary>
+/// Создаёт временный CA и сертификат Keycloak для HTTPS интеграционного окружения.
+/// </summary>
+/// <remarks>
+/// Системное хранилище доверия не изменяется. Клиент проверяет имя сервера, цепочку до собственного CA и назначение server authentication.
+/// </remarks>
 internal sealed class TestTls : IDisposable
 {
     private readonly X509Certificate2 _root;
+    /// <summary>
+    /// PEM-сертификат CA, которому доверяют RabbitMQ и тестовые HTTP-клиенты.
+    /// </summary>
     public byte[] CaPem { get; }
+    /// <summary>
+    /// PEM-сертификат сервера с именами Keycloak, localhost и loopback-адресами.
+    /// </summary>
     public byte[] ServerCertificatePem { get; }
+    /// <summary>
+    /// Приватный ключ сервера в PEM; используется только для настройки тестового Keycloak.
+    /// </summary>
     public byte[] ServerKeyPem { get; }
 
+    /// <summary>
+    /// Генерирует RSA-ключи, краткоживущий CA и подписанный им сертификат Keycloak.
+    /// </summary>
     public TestTls()
     {
         using var rootKey = RSA.Create(2048);
@@ -39,6 +56,13 @@ internal sealed class TestTls : IDisposable
         ServerKeyPem = System.Text.Encoding.UTF8.GetBytes(serverKey.ExportPkcs8PrivateKeyPem());
     }
 
+    /// <summary>
+    /// Создаёт HTTPS handler с проверкой имени сервера, собственного CA и server-auth EKU.
+    /// </summary>
+    /// <remarks>
+    /// У временного CA нет сервиса отзыва, поэтому revocation-проверка отключена только для этого handler; проверка цепочки и имени сервера сохраняется.
+    /// </remarks>
+    /// <returns>Новый handler, за освобождение которого отвечает вызывающий код.</returns>
     public HttpClientHandler CreateHandler() => new()
     {
         UseProxy = false,
@@ -56,5 +80,8 @@ internal sealed class TestTls : IDisposable
         }
     };
 
+    /// <summary>
+    /// Освобождает объект сертификата временного CA.
+    /// </summary>
     public void Dispose() => _root.Dispose();
 }

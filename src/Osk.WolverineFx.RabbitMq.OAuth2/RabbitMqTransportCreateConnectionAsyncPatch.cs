@@ -18,23 +18,22 @@ internal static class RabbitMqTransportCreateConnectionAsyncPatch
         // Password-only connections do not have expiring OAuth2 credentials.
         var provider = __instance.ConnectionFactory?.CredentialsProvider;
         if (provider is null or BasicCredentialsProvider) return;
-        __result = RegisterAsync(__result, __instance, provider);
+        __result = RegisterAsync(__result, __instance);
     }
 
     /// <summary>Дожидается создания соединения и регистрирует его в реестре транспорта.</summary>
     /// <param name="original">Исходная задача Wolverine по созданию соединения.</param>
     /// <param name="transport">Транспорт, определяющий время жизни обновления.</param>
-    /// <param name="provider">Поставщик обновляемых токенов.</param>
     /// <returns>Задача, возвращающая исходное соединение после успешной регистрации.</returns>
     /// <exception cref="ObjectDisposedException">Реестр транспорта уже останавливается и отклоняет регистрацию.</exception>
     /// <remarks>Ошибка или отмена исходной задачи передаётся вызывающему коду без регистрации. При ошибке регистрации созданное соединение освобождается, после чего ошибка передаётся вызывающему коду.</remarks>
     internal static async Task<IConnection> RegisterAsync(
-        Task<IConnection> original, RabbitMqTransport transport, ICredentialsProvider provider)
+        Task<IConnection> original, RabbitMqTransport transport)
     {
         var connection = await original.ConfigureAwait(false);
         try
         {
-            RabbitMqRefreshRegistryStore.GetOrCreate(transport).Register(connection, provider);
+            RabbitMqRefreshRegistryStore.GetOrCreate(transport).Register(connection);
             return connection;
         }
         catch

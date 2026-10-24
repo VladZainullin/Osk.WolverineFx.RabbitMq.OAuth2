@@ -90,10 +90,13 @@ public class PatchTests
     public async Task FailedConnectionDoesNotRequestCredentials()
     {
         var provider = Provider("token");
+        var transport = new RabbitMqTransport("rabbitmq");
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
         var failure = new InvalidOperationException("connection failed");
         var actual = await Assert.That(async () =>
             await RabbitMqTransportCreateConnectionAsyncPatch.RegisterAsync(
-                Task.FromException<IConnection>(failure), new RabbitMqTransport("rabbitmq"), provider.Object))
+                Task.FromException<IConnection>(failure), transport))
             .ThrowsExactly<InvalidOperationException>();
         await Assert.That(actual).IsSameReferenceAs(failure);
         provider.GetCredentialsAsync(Any<CancellationToken>()).WasNeverCalled();
@@ -247,7 +250,9 @@ public class PatchTests
         connection.DisposeAsync()
             .ReturnsAsync(ValueTask.CompletedTask);
         var pending = new TaskCompletionSource<IConnection>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var registration = RabbitMqTransportCreateConnectionAsyncPatch.RegisterAsync(pending.Task, transport, provider.Object);
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
+        var registration = RabbitMqTransportCreateConnectionAsyncPatch.RegisterAsync(pending.Task, transport);
 
         await transport.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
         pending.SetResult(connection.Object);

@@ -4,9 +4,10 @@ using RabbitMQ.Client;
 namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
 /// <summary>Хранит регистрации обновления токенов для одного транспорта Wolverine.</summary>
+/// <param name="provider">Общий поставщик учётных данных транспорта; может отсутствовать у транспорта без OAuth2-соединений.</param>
 /// <param name="logger">Журнал, передаваемый регистрациям соединений.</param>
 /// <remarks>После начала остановки отклоняет поздние регистрации и однократно освобождает накопленные ресурсы.</remarks>
-internal sealed class RabbitMqRefreshRegistry(ILogger logger)
+internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, ILogger logger)
 {
     /// <summary>Синхронизирует регистрацию соединений и остановку реестра.</summary>
     private readonly Lock _sync = new();
@@ -19,13 +20,14 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
 
     /// <summary>Запускает обновление токенов соединения и передаёт регистрацию во владение реестра.</summary>
     /// <param name="connection">Созданное соединение для обновления секрета.</param>
-    /// <param name="provider">Поставщик обновляемых учётных данных.</param>
+    /// <exception cref="ArgumentNullException">У транспорта отсутствует поставщик учётных данных.</exception>
     /// <exception cref="ObjectDisposedException">Остановка реестра уже началась.</exception>
-    public void Register(IConnection connection, ICredentialsProvider provider)
+    public void Register(IConnection connection)
     {
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_stopping, this);
+            ArgumentNullException.ThrowIfNull(provider);
             _refreshers.Add(new RabbitMqCredentialsRefreshRegistration(connection, provider, logger));
         }
     }

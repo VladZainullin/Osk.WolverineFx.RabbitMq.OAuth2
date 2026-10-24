@@ -53,7 +53,6 @@ public class RefreshRegistryTests
     [Test]
     public async Task CancelStopsRefreshAndRejectsNewRegistrations()
     {
-        var registry = RabbitMqRefreshRegistryStore.GetOrCreate(new RabbitMqTransport("rabbitmq"));
         var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = ICredentialsProvider.Mock();
@@ -65,14 +64,18 @@ public class RefreshRegistryTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
-        registry.Register(IConnection.Mock().Object, provider.Object);
+        var transport = new RabbitMqTransport("rabbitmq");
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
+        var registry = RabbitMqRefreshRegistryStore.GetOrCreate(transport);
+        registry.Register(IConnection.Mock().Object);
 
         try
         {
             await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
             registry.Cancel();
             await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            await Assert.That(() => registry.Register(IConnection.Mock().Object, provider.Object))
+            await Assert.That(() => registry.Register(IConnection.Mock().Object))
                 .ThrowsExactly<ObjectDisposedException>();
         }
         finally
@@ -92,7 +95,7 @@ public class RefreshRegistryTests
 
         try
         {
-            await Assert.That(() => registry.Register(IConnection.Mock().Object, ICredentialsProvider.Mock().Object))
+            await Assert.That(() => registry.Register(IConnection.Mock().Object))
                 .ThrowsExactly<ObjectDisposedException>();
         }
         finally
@@ -106,7 +109,10 @@ public class RefreshRegistryTests
     [Test]
     public async Task ConcurrentDisposalsAwaitSameCleanup()
     {
-        var registry = RabbitMqRefreshRegistryStore.GetOrCreate(new RabbitMqTransport("rabbitmq"));
+        var transport = new RabbitMqTransport("rabbitmq");
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(transport, new ConnectionFactory { CredentialsProvider = Provider().Object });
+        var registry = RabbitMqRefreshRegistryStore.GetOrCreate(transport);
         var connection = IConnection.Mock();
         connection.IsOpen.Returns(true);
         var unsubscriptions = 0;
@@ -129,7 +135,7 @@ public class RefreshRegistryTests
             await release.Task;
             cancellationToken.ThrowIfCancellationRequested();
         }
-        registry.Register(connection.Object, Provider().Object);
+        registry.Register(connection.Object);
 
         try
         {
@@ -149,7 +155,7 @@ public class RefreshRegistryTests
             await Task.WhenAll(cleanupTasks).WaitAsync(TimeSpan.FromSeconds(10));
             await registry.DisposeAsync().WaitAsync(TimeSpan.FromSeconds(10));
             await Assert.That(unsubscriptions).IsEqualTo(1);
-            await Assert.That(() => registry.Register(connection.Object, Provider().Object))
+            await Assert.That(() => registry.Register(connection.Object))
                 .ThrowsExactly<ObjectDisposedException>();
         }
         finally
@@ -165,11 +171,13 @@ public class RefreshRegistryTests
     public async Task PostfixDisposesRegistryAfterOriginalFailure()
     {
         var transport = new RabbitMqTransport("rabbitmq");
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(transport, new ConnectionFactory { CredentialsProvider = Provider().Object });
         var registry = RabbitMqRefreshRegistryStore.GetOrCreate(transport);
         var connection = IConnection.Mock();
         var unsubscriptions = 0;
         connection.Events.ConnectionShutdownAsync.OnUnsubscribe(() => Interlocked.Increment(ref unsubscriptions));
-        registry.Register(connection.Object, Provider().Object);
+        registry.Register(connection.Object);
         var original = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var result = new ValueTask(original.Task);
 
@@ -200,6 +208,10 @@ public class RefreshRegistryTests
     {
         var firstTransport = new RabbitMqTransport("rabbitmq");
         var secondTransport = new RabbitMqTransport("rabbitmq");
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(firstTransport, new ConnectionFactory { CredentialsProvider = Provider().Object });
+        typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
+            .SetValue(secondTransport, new ConnectionFactory { CredentialsProvider = Provider().Object });
         var first = RabbitMqRefreshRegistryStore.GetOrCreate(firstTransport);
         var second = RabbitMqRefreshRegistryStore.GetOrCreate(secondTransport);
         var firstConnection = IConnection.Mock();
@@ -220,8 +232,8 @@ public class RefreshRegistryTests
                 if (Volatile.Read(ref firstDisposed) == 1) updatedAfterDisposal.TrySetResult();
             })
             .ReturnsAsync(Task.CompletedTask);
-        first.Register(firstConnection.Object, Provider().Object);
-        second.Register(secondConnection.Object, Provider().Object);
+        first.Register(firstConnection.Object);
+        second.Register(secondConnection.Object);
 
         try
         {

@@ -172,7 +172,7 @@ internal sealed class WolverineSession : IAsyncDisposable
     public RefreshDiagnostics[] CaptureRefreshDiagnostics()
     {
         var transport = _host.Services.GetRequiredService<IWolverineRuntime>().Options.Transports.OfType<RabbitMqTransport>().Single();
-        var registry = RabbitMqRefreshRegistry.For(transport);
+        var registry = RabbitMqRefreshRegistryStore.GetOrCreate(transport);
         // OAuth2 2.0.0 exposes no worker completion API. Its worker awaits the
         // refresh callback, including UpdateSecretAsync, so completion also rules
         // out an in-flight secret update. Snapshot every registration under its lock.

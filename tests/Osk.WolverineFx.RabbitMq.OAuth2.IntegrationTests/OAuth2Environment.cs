@@ -212,7 +212,8 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <returns>Идентификатор ключа и публичный ключ в PEM для настройки RabbitMQ.</returns>
     private async Task<(string Kid, byte[] PublicKey)> GetSigningKeyAsync(CancellationToken cancellationToken)
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var http = new HttpClient();
+        http.Timeout = TimeSpan.FromSeconds(10);
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials",
@@ -295,7 +296,8 @@ internal sealed class OAuth2Environment : IAsyncDisposable
     /// <returns>Задача ожидания доступности realm.</returns>
     public async Task WaitForKeycloakAsync(CancellationToken cancellationToken)
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        using var http = new HttpClient();
+        http.Timeout = TimeSpan.FromSeconds(2);
         var realm = new Uri($"http://{Keycloak.Hostname}:{Keycloak.GetMappedPublicPort(8080)}/realms/wolverine");
         await WaitUntilAsync(async () =>
         {

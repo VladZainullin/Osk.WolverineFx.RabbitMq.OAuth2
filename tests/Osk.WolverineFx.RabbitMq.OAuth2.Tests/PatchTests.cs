@@ -120,7 +120,7 @@ public class PatchTests
                 requested.TrySetResult();
                 return Task.FromResult(new Credentials("oauth", "user", "", TimeSpan.FromMinutes(1)));
             });
-        await using var refresher = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
+        await using var refresher = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, logger);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await refresher.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -158,7 +158,7 @@ public class PatchTests
             .Returns(() => Task.FromResult(new Credentials(
                 "oauth", "user", $"token-{Interlocked.Increment(ref requests)}", TimeSpan.FromMilliseconds(150))));
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, NullLogger.Instance);
 
         await Assert.That(await firstUpdate.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("token-1");
         await Assert.That(await secondUpdate.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("token-2");
@@ -195,7 +195,7 @@ public class PatchTests
             });
         var logger = new ErrorLogger();
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, logger);
 
         await Assert.That(await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsSameReferenceAs(failure);
         await Assert.That(await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("recovered-token");
@@ -228,7 +228,7 @@ public class PatchTests
         var provider = Provider("token", TimeSpan.FromMilliseconds(150));
         var logger = new ErrorLogger();
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, logger);
 
         await Assert.That(await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsSameReferenceAs(failure);
         await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -288,7 +288,7 @@ public class PatchTests
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(shutdown, provider.Object, NullLogger.Instance);
+        await using var registration = new ConnectionCredentialsRefresherRelation(shutdown, provider.Object, NullLogger.Instance);
         await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -319,7 +319,7 @@ public class PatchTests
             .ReturnsAsync(Task.CompletedTask);
         var provider = Provider("token", TimeSpan.FromHours(1));
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, NullLogger.Instance);
         await updated.Task.WaitAsync(TimeSpan.FromSeconds(10));
         registration.Cancel();
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -350,7 +350,7 @@ public class PatchTests
                 return Task.FromResult(new Credentials("oauth", "user", "token", TimeSpan.FromMilliseconds(150)));
             });
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, NullLogger.Instance);
         await nextRequest.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -378,7 +378,7 @@ public class PatchTests
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
-        var actual = await Assert.That(() => new RabbitMqCredentialsRefreshRegistration(
+        var actual = await Assert.That(() => new ConnectionCredentialsRefresherRelation(
             shutdown, provider.Object, NullLogger.Instance)).ThrowsExactly<InvalidOperationException>();
 
         await Assert.That(actual).IsSameReferenceAs(failure);
@@ -417,7 +417,7 @@ public class PatchTests
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, NullLogger.Instance);
         await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -457,7 +457,7 @@ public class PatchTests
         }
 
         var provider = Provider("token");
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await using var registration = new ConnectionCredentialsRefresherRelation(connection.Object, provider.Object, NullLogger.Instance);
         await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
 
         try

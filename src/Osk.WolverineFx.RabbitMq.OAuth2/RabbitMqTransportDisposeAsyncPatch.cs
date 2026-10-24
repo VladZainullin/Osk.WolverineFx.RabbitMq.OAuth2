@@ -19,7 +19,7 @@ internal static class RabbitMqTransportDisposeAsyncPatch
         result = DisposeAsync(result, registry);
     }
 
-    private static async ValueTask DisposeAsync(ValueTask original, RabbitMqRefreshRegistry registry)
+    private static async ValueTask DisposeAsync(ValueTask original, RabbitMqTransportConnectionsRegistry registry)
     {
         try
         {

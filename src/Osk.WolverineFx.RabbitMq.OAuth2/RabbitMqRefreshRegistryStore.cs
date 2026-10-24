@@ -7,16 +7,16 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2;
 /// <remarks>Слабый ключ не препятствует сборке мусора транспорта. Остановленный реестр сохраняется до удаления транспорта для отклонения поздних регистраций.</remarks>
 internal static class RabbitMqRefreshRegistryStore
 {
-    private static readonly ConditionalWeakTable<RabbitMqTransport, RabbitMqRefreshRegistry> Registries = new();
+    private static readonly ConditionalWeakTable<RabbitMqTransport, RabbitMqTransportConnectionsRegistry> Registries = new();
 
     /// <summary>Возвращает единственный реестр транспорта, создавая его при первом обращении.</summary>
     /// <param name="transport">Транспорт, которому принадлежат соединения.</param>
     /// <returns>Реестр, связанный с транспортом.</returns>
-    public static RabbitMqRefreshRegistry GetOrCreate(RabbitMqTransport transport) =>
+    public static RabbitMqTransportConnectionsRegistry GetOrCreate(RabbitMqTransport transport) =>
         Registries.GetValue(transport, Create);
 
-    private static RabbitMqRefreshRegistry Create(RabbitMqTransport transport)
+    private static RabbitMqTransportConnectionsRegistry Create(RabbitMqTransport transport)
     {
-        return new RabbitMqRefreshRegistry(transport.ConnectionFactory?.CredentialsProvider, transport.Logger);
+        return new RabbitMqTransportConnectionsRegistry(transport.ConnectionFactory?.CredentialsProvider, transport.Logger);
     }
 }

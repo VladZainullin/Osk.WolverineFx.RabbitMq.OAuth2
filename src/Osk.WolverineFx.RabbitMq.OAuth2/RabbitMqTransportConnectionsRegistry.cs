@@ -7,11 +7,11 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2;
 /// <param name="provider">Общий поставщик учётных данных транспорта; может отсутствовать у транспорта без OAuth2-соединений.</param>
 /// <param name="logger">Журнал, передаваемый регистрациям соединений.</param>
 /// <remarks>После начала остановки отклоняет поздние регистрации и однократно освобождает накопленные ресурсы.</remarks>
-internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, ILogger logger)
+internal sealed class RabbitMqTransportConnectionsRegistry(ICredentialsProvider? provider, ILogger logger)
 {
-    private readonly Lock _sync = new();
+    private readonly Lock _lock = new();
 
-    private readonly List<RabbitMqCredentialsRefreshRegistration> _refreshers = [];
+    private readonly List<ConnectionCredentialsRefresherRelation> _refreshers = [];
 
     private Task? _disposeTask;
 
@@ -23,11 +23,11 @@ internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, IL
     /// <exception cref="ObjectDisposedException">Остановка реестра уже началась.</exception>
     public void Register(IConnection connection)
     {
-        lock (_sync)
+        lock (_lock)
         {
             ObjectDisposedException.ThrowIf(_stopping, this);
             ArgumentNullException.ThrowIfNull(provider);
-            _refreshers.Add(new RabbitMqCredentialsRefreshRegistration(connection, provider, logger));
+            _refreshers.Add(new ConnectionCredentialsRefresherRelation(connection, provider, logger));
         }
     }
 
@@ -35,7 +35,7 @@ internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, IL
     /// <remarks>Сначала запрещает новые регистрации, в том числе при отсутствии соединений. Повторные вызовы безопасны.</remarks>
     public void Cancel()
     {
-        lock (_sync)
+        lock (_lock)
         {
             _stopping = true;
             foreach (var refresher in _refreshers) refresher.Cancel();
@@ -46,7 +46,7 @@ internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, IL
     /// <returns>Общая задача ожидания всех регистраций, сохраняемая для повторных вызовов.</returns>
     public Task DisposeAsync()
     {
-        lock (_sync)
+        lock (_lock)
         {
             if (_disposeTask is not null) return _disposeTask;
             _stopping = true;

@@ -5,37 +5,34 @@ using RabbitMQ.Client.OAuth2;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2;
 
-internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
+internal sealed class ConnectionCredentialsRefresherRelation : IAsyncDisposable
 {
     private readonly IConnection _connection;
     private readonly ILogger _logger;
-    private readonly Lock _sync = new();
-    private readonly CancellationTokenSource _cts = new();
+    private readonly Lock _lock = new();
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly CredentialsRefresher _refresher;
     private Task? _disposeTask;
 
-    public RabbitMqCredentialsRefreshRegistration(IConnection connection, ICredentialsProvider provider, ILogger logger)
+    public ConnectionCredentialsRefresherRelation(IConnection connection, ICredentialsProvider provider, ILogger logger)
     {
         _connection = connection;
         _logger = logger;
         _connection.ConnectionShutdownAsync += OnShutdownAsync;
         try
         {
-            _refresher = new CredentialsRefresher(provider, OnRefreshedAsync, _cts.Token);
+            _refresher = new CredentialsRefresher(provider, OnRefreshedAsync, _cancellationTokenSource.Token);
         }
         catch
         {
-            lock (_sync)
+            try
             {
-                try
-                {
-                    Cancel();
-                }
-                finally
-                {
-                    _disposeTask = Task.CompletedTask;
-                    _cts.Dispose();
-                }
+                Cancel();
+            }
+            finally
+            {
+                _disposeTask = Task.CompletedTask;
+                _cancellationTokenSource.Dispose();
             }
 
             throw;
@@ -82,9 +79,9 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
 
     public void Cancel()
     {
-        lock (_sync)
+        lock (_lock)
         {
-            if (_disposeTask is not null || _cts.IsCancellationRequested) return;
+            if (_disposeTask is not null || _cancellationTokenSource.IsCancellationRequested) return;
             // The transport prefix calls this while the connection still permits event access.
             // An externally disposed AutorecoveringConnection rejects event unsubscription.
             try
@@ -95,13 +92,13 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
             {
             }
 
-            _cts.Cancel();
+            _cancellationTokenSource.Cancel();
         }
     }
 
     public ValueTask DisposeAsync()
     {
-        lock (_sync)
+        lock (_lock)
         {
             if (_disposeTask is not null) return new ValueTask(_disposeTask);
             Cancel();
@@ -117,14 +114,14 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
             _refresher.Dispose();
         }
         // OAuth2 2.0.0 throws an aggregate if cancellation interrupts its delay.
-        catch (AggregateException ex) when (_cts.IsCancellationRequested &&
+        catch (AggregateException ex) when (_cancellationTokenSource.IsCancellationRequested &&
                                             ex.Flatten().InnerExceptions
                                                 .All(static e => e is OperationCanceledException))
         {
         }
         finally
         {
-            _cts.Dispose();
+            _cancellationTokenSource.Dispose();
         }
     }
 }

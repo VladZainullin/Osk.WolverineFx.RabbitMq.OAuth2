@@ -178,7 +178,7 @@ internal sealed class WolverineSession : IAsyncDisposable
         // out an in-flight secret update. Snapshot every registration under its lock.
         lock (ReadField<Lock>(registry, "_sync"))
         {
-            return ReadField<List<RabbitMqCredentialsRefreshRegistration>>(registry, "_refreshers")
+            return ReadField<List<ConnectionCredentialsRefresherRelation>>(registry, "_refreshers")
                 .Select(static registration => new RefreshDiagnostics(
                     ReadField<Task>(ReadField<CredentialsRefresher>(registration, "_refresher"), "_refreshTask"),
                     ReadField<IConnection>(registration, "_connection"))).ToArray();

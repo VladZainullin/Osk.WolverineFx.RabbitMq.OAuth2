@@ -54,10 +54,25 @@ SubElement(SubElement(mapping, 'packageSource', key='nuget'), 'package', pattern
 indent(configuration)
 ElementTree(configuration).write(temporary / 'project/NuGet.Config', encoding='unicode')
 PY
-{
-  printf '%s\n' 'using System;' 'using System.Linq;'
-  cat "$repo_root/samples/StartupSmoke/Program.cs"
-} > "$consumer_tmp/project/Program.cs"
+cat > "$consumer_tmp/project/Program.cs" <<'CS'
+using System;
+using System.Linq;
+using HarmonyLib;
+using Osk.WolverineFx.RabbitMq.OAuth2;
+using Wolverine.RabbitMQ.Internal;
+
+// No explicit Install() call: the generator must install both patches before Main.
+var create = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), "CreateConnectionAsync");
+var dispose = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), nameof(RabbitMqTransport.DisposeAsync));
+var createPatches = Harmony.GetPatchInfo(create);
+var disposePatches = Harmony.GetPatchInfo(dispose);
+if (createPatches?.Postfixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1 ||
+    disposePatches?.Prefixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1 ||
+    disposePatches?.Postfixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1)
+    throw new InvalidOperationException("Automatic startup did not install both patches.");
+
+Console.WriteLine("PASS: NuGet generator installed both Harmony patches before Main.");
+CS
 
 dotnet restore "$consumer_tmp/project/Consumer.csproj" --configfile "$consumer_tmp/project/NuGet.Config"
 dotnet run --project "$consumer_tmp/project/Consumer.csproj" -c Release --no-restore

@@ -8,7 +8,7 @@ NuGet-библиотека для WolverineFx.RabbitMQ **6.49.0** и прило�
 
 Для установки патчей достаточно этой ссылки на пакет в запускаемом C#-проекте. Дополнительные свойства MSBuild и вызовы регистрации не нужны. Source generator внутри пакета создаёт `ModuleInitializer`, вызывающий `RabbitMqOAuth2Patches.Install()` автоматически. Повторный вызов безопасен.
 
-`EmitCompilerGeneratedFiles` лишь сохраняет сгенерированный код на диск для просмотра; для генерации и установки патчей это свойство не требуется. В примере оно отсутствует.
+`EmitCompilerGeneratedFiles` лишь сохраняет сгенерированный код на диск для просмотра; для генерации и установки патчей это свойство не требуется.
 
 Настройте `ConnectionFactory.CredentialsProvider` вашим OAuth2-провайдером, например `OAuth2ClientCredentialsProvider` из `RabbitMQ.Client.OAuth2`. Пакет использует штатный `CredentialsRefresher` версии 2.0.0, а callback передаёт новый токен открытому соединению через `IConnection.UpdateSecretAsync`. Обычные подключения с `BasicCredentialsProvider` пропускаются.
 
@@ -22,15 +22,12 @@ NuGet-библиотека для WolverineFx.RabbitMQ **6.49.0** и прило�
 
 ```sh
 dotnet build Osk.WolverineFx.RabbitMq.OAuth2.slnx -c Release
-dotnet run --project samples/StartupSmoke -c Release
 dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Tests -c Release
 dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2 -c Release -o artifacts
 bash tools/verify-package-consumer.sh
 ```
 
 SDK и тестовый runner Microsoft Testing Platform закреплены в `global.json`; тесты используют TUnit. Настройки компилятора находятся в `Directory.Build.props`, версии зависимостей — в `Directory.Packages.props`. Они относятся к разработке этого репозитория. Потребителю не нужно копировать эти файлы.
-
-Пример `samples/StartupSmoke` ссылается на проекты библиотеки и генератора, поэтому решение собирается до публикации пакета. Ссылка на генератор подключена как analyzer, чтобы проверить автоматическую установку патчей при работе с исходниками.
 
 `tools/verify-package-consumer.sh` создаёт отдельный проект вне репозитория и подключает собранный пакет обычной ссылкой `PackageReference`. Проверка использует новый NuGet-кэш и подтверждает установку обоих патчей до `Main`.
 

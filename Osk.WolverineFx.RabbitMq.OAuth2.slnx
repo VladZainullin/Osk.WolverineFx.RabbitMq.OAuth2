@@ -7,9 +7,6 @@
     <File Path="global.json" />
     <File Path="README.md" />
   </Folder>
-  <Folder Name="/samples/">
-    <Project Path="samples/StartupSmoke/StartupSmoke.csproj" />
-  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Osk.WolverineFx.RabbitMq.OAuth2.Generator/Osk.WolverineFx.RabbitMq.OAuth2.Generator.csproj" />
     <Project Path="src/Osk.WolverineFx.RabbitMq.OAuth2/Osk.WolverineFx.RabbitMq.OAuth2.csproj" />

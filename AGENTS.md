@@ -39,7 +39,6 @@ Run from the repository root:
 
 ```sh
 dotnet build Osk.WolverineFx.RabbitMq.OAuth2.slnx -c Release
-dotnet run --project samples/StartupSmoke -c Release
 dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.Tests -c Release
 dotnet pack src/Osk.WolverineFx.RabbitMq.OAuth2 -c Release -o artifacts
 bash tools/verify-package-consumer.sh
@@ -48,7 +47,7 @@ dotnet test --project tests/Osk.WolverineFx.RabbitMq.OAuth2.IntegrationTests -c 
 
 Tests use TUnit and the Microsoft Testing Platform runner selected in global.json. Preserve the `--project` option for .NET 10 MTP commands; do not add xUnit or VSTest adapters. Process-wide Harmony registration tests must remain nonparallel.
 
-The in-repository smoke example references the runtime project and the generator project (OutputItemType=Analyzer, ReferenceOutputAssembly=false). Keep solution builds independent of this unpublished package. The separate consumer verification script must retain its PackageReference to validate the actual NuGet artifact.
+Keep solution builds independent of this unpublished package. The consumer verification script must retain its PackageReference to validate the actual NuGet artifact and generate its consumer source without depending on sample projects.
 
 The verification script builds a consumer outside this checkout with an isolated NuGet cache stored outside its source directory. It must print `PASS: NuGet generator installed both Harmony patches before Main.` without calling Install explicitly or inheriting repository props files.
 

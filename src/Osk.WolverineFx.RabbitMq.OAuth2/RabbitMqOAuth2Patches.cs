@@ -10,9 +10,8 @@ public static class RabbitMqOAuth2Patches
 {
     /// <summary>Идентификатор владельца Harmony-патчей для их поиска и отката.</summary>
     public const string HarmonyId = "Osk.WolverineFx.RabbitMq.OAuth2";
-    /// <summary>Синхронизирует установку патчей во всём процессе.</summary>
+
     private static readonly Lock Sync = new();
-    /// <summary>Показывает, что оба патча успешно установлены.</summary>
     private static bool _installed;
 
     /// <summary>Однократно устанавливает оба патча, сохраняя безопасность повторных и параллельных вызовов.</summary>

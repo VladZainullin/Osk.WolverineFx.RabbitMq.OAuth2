@@ -23,11 +23,6 @@ internal static class RabbitMqTransportDisposeAsyncPatch
         [HarmonyArgument("__result")] ref ValueTask result) =>
         result = DisposeAsync(result, RabbitMqRefreshRegistryStore.GetOrCreate(transport));
 
-    /// <summary>Ожидает освобождения транспорта и гарантированно запускает освобождение его реестра.</summary>
-    /// <param name="original">Исходная операция освобождения транспорта.</param>
-    /// <param name="registry">Реестр регистраций освобождаемого транспорта.</param>
-    /// <returns>Операция, завершающаяся после транспорта и его планировщиков обновления.</returns>
-    /// <remarks>Освобождение реестра выполняется в finally. Ошибки не подавляются; ошибка реестра может заменить ошибку исходной операции. Ожидание не отменяется отдельным токеном, чтобы завершить очистку ресурсов.</remarks>
     private static async ValueTask DisposeAsync(ValueTask original, RabbitMqRefreshRegistry registry)
     {
         try { await original.ConfigureAwait(false); }

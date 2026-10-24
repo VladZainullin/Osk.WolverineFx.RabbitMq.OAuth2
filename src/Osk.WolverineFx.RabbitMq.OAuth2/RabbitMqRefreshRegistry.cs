@@ -9,13 +9,12 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2;
 /// <remarks>После начала остановки отклоняет поздние регистрации и однократно освобождает накопленные ресурсы.</remarks>
 internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, ILogger logger)
 {
-    /// <summary>Синхронизирует регистрацию соединений и остановку реестра.</summary>
     private readonly Lock _sync = new();
-    /// <summary>Регистрации, ресурсы которых должен освободить транспорт.</summary>
+    
     private readonly List<RabbitMqCredentialsRefreshRegistration> _refreshers = [];
-    /// <summary>Общая задача завершения освобождения всех регистраций.</summary>
+    
     private Task? _disposeTask;
-    /// <summary>Запрещает регистрацию соединений после начала остановки транспорта.</summary>
+    
     private bool _stopping;
 
     /// <summary>Запускает обновление токенов соединения и передаёт регистрацию во владение реестра.</summary>

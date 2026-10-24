@@ -27,13 +27,17 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         {
             lock (_sync)
             {
-                try { Cancel(); }
+                try
+                {
+                    Cancel();
+                }
                 finally
                 {
                     _disposeTask = Task.CompletedTask;
                     _cts.Dispose();
                 }
             }
+
             throw;
         }
     }
@@ -44,7 +48,8 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    private async Task OnRefreshedAsync(Credentials? credentials, Exception? exception, CancellationToken cancellationToken)
+    private async Task OnRefreshedAsync(Credentials? credentials, Exception? exception,
+        CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested) return;
         if (exception is not null)
@@ -66,7 +71,9 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
                 .ConfigureAwait(false);
             _logger.LogDebug("RabbitMQ OAuth2 token refreshed successfully");
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "RabbitMQ OAuth2 connection token update failed");
@@ -80,8 +87,14 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
             if (_disposeTask is not null || _cts.IsCancellationRequested) return;
             // The transport prefix calls this while the connection still permits event access.
             // An externally disposed AutorecoveringConnection rejects event unsubscription.
-            try { _connection.ConnectionShutdownAsync -= OnShutdownAsync; }
-            catch (ObjectDisposedException) { }
+            try
+            {
+                _connection.ConnectionShutdownAsync -= OnShutdownAsync;
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
             _cts.Cancel();
         }
     }
@@ -99,11 +112,16 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
 
     private void DisposeRefresher()
     {
-        try { _refresher.Dispose(); }
+        try
+        {
+            _refresher.Dispose();
+        }
         // OAuth2 2.0.0 throws an aggregate if cancellation interrupts its delay.
         catch (AggregateException ex) when (_cts.IsCancellationRequested &&
-            ex.Flatten().InnerExceptions.All(static e => e is OperationCanceledException))
-        { }
+                                            ex.Flatten().InnerExceptions
+                                                .All(static e => e is OperationCanceledException))
+        {
+        }
         finally
         {
             _cts.Dispose();

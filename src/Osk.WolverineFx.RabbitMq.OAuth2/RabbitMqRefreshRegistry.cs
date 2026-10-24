@@ -10,11 +10,11 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2;
 internal sealed class RabbitMqRefreshRegistry(ICredentialsProvider? provider, ILogger logger)
 {
     private readonly Lock _sync = new();
-    
+
     private readonly List<RabbitMqCredentialsRefreshRegistration> _refreshers = [];
-    
+
     private Task? _disposeTask;
-    
+
     private bool _stopping;
 
     /// <summary>Запускает обновление токенов соединения и передаёт регистрацию во владение реестра.</summary>

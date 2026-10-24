@@ -13,5 +13,10 @@ internal static class RabbitMqRefreshRegistryStore
     /// <param name="transport">Транспорт, которому принадлежат соединения.</param>
     /// <returns>Реестр, связанный с транспортом.</returns>
     public static RabbitMqRefreshRegistry GetOrCreate(RabbitMqTransport transport) =>
-        Registries.GetValue(transport, static transport => new RabbitMqRefreshRegistry(transport.ConnectionFactory?.CredentialsProvider, transport.Logger));
+        Registries.GetValue(transport, Create);
+
+    private static RabbitMqRefreshRegistry Create(RabbitMqTransport transport)
+    {
+        return new RabbitMqRefreshRegistry(transport.ConnectionFactory?.CredentialsProvider, transport.Logger);
+    }
 }

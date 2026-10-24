@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="TUnit" />
-    <PackageReference Include="Moq" />
+    <PackageReference Include="TUnit.Mocks" />
     <ProjectReference Include="../../src/Osk.WolverineFx.RabbitMq.OAuth2/Osk.WolverineFx.RabbitMq.OAuth2.csproj" />
   </ItemGroup>
 </Project>

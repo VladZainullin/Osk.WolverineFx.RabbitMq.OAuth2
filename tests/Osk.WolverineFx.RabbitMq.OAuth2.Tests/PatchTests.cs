@@ -1,9 +1,9 @@
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using TUnit.Mocks;
 using Wolverine.RabbitMQ.Internal;
 
 namespace Osk.WolverineFx.RabbitMq.OAuth2.Tests;
@@ -42,22 +42,28 @@ public class PatchTests
     {
         RabbitMqOAuth2Patches.Install();
         var transport = new RabbitMqTransport("rabbitmq");
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
+        var unsubscriptions = 0;
+        connection.Events.ConnectionShutdownAsync.OnUnsubscribe(() => Interlocked.Increment(ref unsubscriptions));
+        connection.IsOpen.Returns(true);
         var updated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string _, CancellationToken _) => { updated.TrySetResult(token); return Task.CompletedTask; });
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>())
+            .Callback((string token, string _, CancellationToken cancellationToken) => { updated.TrySetResult(token); })
+            .ReturnsAsync(Task.CompletedTask);
         var provider = Provider("new-token", TimeSpan.FromMilliseconds(150));
         typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
             .SetValue(transport, new ConnectionFactory { CredentialsProvider = provider.Object });
         var original = Task.FromResult(connection.Object);
         RabbitMqTransportCreateConnectionAsyncPatch.Postfix(transport, ref original);
         var result = await original;
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
         await Assert.That(result).IsSameReferenceAs(connection.Object);
         await Assert.That(await updated.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("new-token");
         await transport.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
-        provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
-        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+        provider.GetCredentialsAsync(Any<CancellationToken>()).WasCalled(Times.AtLeastOnce);
+        await Assert.That(unsubscriptions).IsEqualTo(1);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
     }
 
     /// <summary>
@@ -70,7 +76,7 @@ public class PatchTests
         var transport = new RabbitMqTransport("rabbitmq");
         typeof(RabbitMqTransport).GetProperty(nameof(RabbitMqTransport.ConnectionFactory))!
             .SetValue(transport, new ConnectionFactory { CredentialsProvider = new BasicCredentialsProvider("basic", "user", "password") });
-        var original = Task.FromResult(new Mock<IConnection>().Object);
+        var original = Task.FromResult(IConnection.Mock().Object);
         var result = original;
         RabbitMqTransportCreateConnectionAsyncPatch.Postfix(transport, ref result);
         await Assert.That((object)result).IsSameReferenceAs(original);
@@ -90,7 +96,7 @@ public class PatchTests
                 Task.FromException<IConnection>(failure), new RabbitMqTransport("rabbitmq"), provider.Object))
             .ThrowsExactly<InvalidOperationException>();
         await Assert.That(actual).IsSameReferenceAs(failure);
-        provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Never);
+        provider.GetCredentialsAsync(Any<CancellationToken>()).WasNeverCalled();
     }
 
     /// <summary>
@@ -100,21 +106,22 @@ public class PatchTests
     [Test]
     public async Task EmptyTokenIsNotSentAndDisposalStopsRefresher()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(true);
         var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var logger = new ErrorLogger();
-        var provider = new Mock<ICredentialsProvider>();
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>())).Returns(() =>
-        {
-            requested.TrySetResult();
-            return Task.FromResult(new Credentials("oauth", "user", "", TimeSpan.FromMinutes(1)));
-        });
+        var provider = ICredentialsProvider.Mock();
+        provider.GetCredentialsAsync(Any<CancellationToken>())
+            .Returns(() =>
+            {
+                requested.TrySetResult();
+                return Task.FromResult(new Credentials("oauth", "user", "", TimeSpan.FromMinutes(1)));
+            });
         await using var refresher = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, logger);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await refresher.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
-        connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>()).WasNeverCalled();
     }
 
     /// <summary>
@@ -124,13 +131,13 @@ public class PatchTests
     [Test]
     public async Task PeriodicRefreshesSendEachNewToken()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(true);
         var firstUpdate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondUpdate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var updates = 0;
-        connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken cancellationToken) =>
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>())
+            .Callback((string token, string reason, CancellationToken cancellationToken) =>
             {
                 if (Interlocked.Increment(ref updates) == 1)
                 {
@@ -140,12 +147,11 @@ public class PatchTests
                 {
                     secondUpdate.TrySetResult(token);
                 }
-
-                return Task.CompletedTask;
-            });
-        var provider = new Mock<ICredentialsProvider>();
+            })
+            .ReturnsAsync(Task.CompletedTask);
+        var provider = ICredentialsProvider.Mock();
         var requests = 0;
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+        provider.GetCredentialsAsync(Any<CancellationToken>())
             .Returns(() => Task.FromResult(new Credentials(
                 "oauth", "user", $"token-{Interlocked.Increment(ref requests)}", TimeSpan.FromMilliseconds(150))));
 
@@ -162,23 +168,22 @@ public class PatchTests
     [Test]
     public async Task ProviderFailureIsLoggedAndLaterRefreshContinues()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(true);
         var recovered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string _, CancellationToken _) =>
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>())
+            .Callback((string token, string _, CancellationToken cancellationToken) =>
             {
                 if (token == "recovered-token")
                 {
                     recovered.TrySetResult(token);
                 }
-
-                return Task.CompletedTask;
-            });
+            })
+            .ReturnsAsync(Task.CompletedTask);
         var failure = new InvalidOperationException("provider unavailable");
-        var provider = new Mock<ICredentialsProvider>();
+        var provider = ICredentialsProvider.Mock();
         var requests = 0;
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+        provider.GetCredentialsAsync(Any<CancellationToken>())
             .Returns(() => Interlocked.Increment(ref requests) switch
             {
                 1 => Task.FromResult(new Credentials("oauth", "user", "first-token", TimeSpan.FromMilliseconds(150))),
@@ -191,7 +196,7 @@ public class PatchTests
 
         await Assert.That(await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsSameReferenceAs(failure);
         await Assert.That(await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo("recovered-token");
-        provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.AtLeast(3));
+        provider.GetCredentialsAsync(Any<CancellationToken>()).WasCalled(Times.AtLeast(3));
     }
 
     /// <summary>
@@ -201,13 +206,13 @@ public class PatchTests
     [Test]
     public async Task SecretUpdateFailureIsLoggedAndLaterRefreshContinues()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(true);
         var failure = new InvalidOperationException("secret update unavailable");
         var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var updates = 0;
-        connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string _, string _, CancellationToken _) =>
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>())
+            .Returns(() =>
             {
                 if (Interlocked.Increment(ref updates) == 1)
                 {
@@ -224,7 +229,7 @@ public class PatchTests
 
         await Assert.That(await logger.Error.Task.WaitAsync(TimeSpan.FromSeconds(10))).IsSameReferenceAs(failure);
         await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>()).WasCalled(Times.AtLeast(2));
     }
 
     /// <summary>
@@ -237,9 +242,10 @@ public class PatchTests
         RabbitMqOAuth2Patches.Install();
         var transport = new RabbitMqTransport("rabbitmq");
         var provider = Provider("token");
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
-        connection.Setup(x => x.DisposeAsync()).Returns(ValueTask.CompletedTask);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(true);
+        connection.DisposeAsync()
+            .ReturnsAsync(ValueTask.CompletedTask);
         var pending = new TaskCompletionSource<IConnection>(TaskCreationOptions.RunContinuationsAsynchronously);
         var registration = RabbitMqTransportCreateConnectionAsyncPatch.RegisterAsync(pending.Task, transport, provider.Object);
 
@@ -248,8 +254,8 @@ public class PatchTests
 
         await Assert.That(async () => await registration.WaitAsync(TimeSpan.FromSeconds(10)))
             .ThrowsExactly<ObjectDisposedException>();
-        connection.Verify(x => x.DisposeAsync(), Times.Once);
-        provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Never);
+        connection.DisposeAsync().WasCalled(Times.Once);
+        provider.GetCredentialsAsync(Any<CancellationToken>()).WasNeverCalled();
     }
 
     /// <summary>
@@ -259,12 +265,16 @@ public class PatchTests
     [Test]
     public async Task ApplicationShutdownCancelsOutstandingCredentialsRequest()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
+        var shutdown = new AwaitableShutdownConnection(connection.Object);
+        var unsubscriptions = 0;
+        connection.Events.ConnectionShutdownAsync.OnUnsubscribe(() => Interlocked.Increment(ref unsubscriptions));
+        connection.IsOpen.Returns(true);
         var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var provider = new Mock<ICredentialsProvider>();
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+        var provider = ICredentialsProvider.Mock();
+        provider.GetCredentialsAsync(Any<CancellationToken>())
             .Returns(async (CancellationToken cancellationToken) =>
             {
                 using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
@@ -273,16 +283,17 @@ public class PatchTests
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
             });
 
-        await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await using var registration = new RabbitMqCredentialsRefreshRegistration(shutdown, provider.Object, NullLogger.Instance);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        await connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
-            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"));
+        await shutdown.RaiseAsync(new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"));
         await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
-        connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<RabbitMQ.Client.Events.AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>()).WasNeverCalled();
+        await Assert.That(unsubscriptions).IsEqualTo(1);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
     }
 
     /// <summary>
@@ -292,15 +303,15 @@ public class PatchTests
     [Test]
     public async Task CancellationDuringRefreshDelayDoesNotEscapeDisposal()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(true);
         var updated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string token, string reason, CancellationToken cancellationToken) =>
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>())
+            .Callback((string token, string reason, CancellationToken cancellationToken) =>
             {
                 updated.TrySetResult();
-                return Task.CompletedTask;
-            });
+            })
+            .ReturnsAsync(Task.CompletedTask);
         var provider = Provider("token", TimeSpan.FromHours(1));
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
@@ -308,7 +319,7 @@ public class PatchTests
         registration.Cancel();
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
-        provider.Verify(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()), Times.Once);
+        provider.GetCredentialsAsync(Any<CancellationToken>()).WasCalled(Times.Once);
     }
 
     /// <summary>
@@ -318,12 +329,12 @@ public class PatchTests
     [Test]
     public async Task ClosedConnectionDoesNotReceiveSecretUpdates()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(false);
+        var connection = IConnection.Mock();
+        connection.IsOpen.Returns(false);
         var nextRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var provider = new Mock<ICredentialsProvider>();
+        var provider = ICredentialsProvider.Mock();
         var requests = 0;
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+        provider.GetCredentialsAsync(Any<CancellationToken>())
             .Returns(() =>
             {
                 if (Interlocked.Increment(ref requests) >= 2)
@@ -338,7 +349,7 @@ public class PatchTests
         await nextRequest.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
-        connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>()).WasNeverCalled();
     }
 
     /// <summary>
@@ -348,11 +359,14 @@ public class PatchTests
     [Test]
     public async Task FailedInitializationRemovesShutdownSubscription()
     {
-        var connection = new Mock<IConnection>();
+        var connection = IConnection.Mock();
+        var shutdown = new AwaitableShutdownConnection(connection.Object);
+        var unsubscriptions = 0;
+        connection.Events.ConnectionShutdownAsync.OnUnsubscribe(() => Interlocked.Increment(ref unsubscriptions));
         var failure = new InvalidOperationException("provider name unavailable");
-        var provider = new Mock<ICredentialsProvider>();
-        provider.SetupGet(x => x.Name).Throws(failure);
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+        var provider = ICredentialsProvider.Mock();
+        provider.Name.Throws(failure);
+        provider.GetCredentialsAsync(Any<CancellationToken>())
             .Returns(async (CancellationToken cancellationToken) =>
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -360,14 +374,14 @@ public class PatchTests
             });
 
         var actual = await Assert.That(() => new RabbitMqCredentialsRefreshRegistration(
-            connection.Object, provider.Object, NullLogger.Instance)).ThrowsExactly<InvalidOperationException>();
+            shutdown, provider.Object, NullLogger.Instance)).ThrowsExactly<InvalidOperationException>();
 
         await Assert.That(actual).IsSameReferenceAs(failure);
-        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
-        // Moq returns null when the event has no subscribers after cleanup.
-        await connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
-            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"));
-        connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.WasSubscribed).IsTrue();
+        await Assert.That(unsubscriptions).IsEqualTo(1);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
+        await shutdown.RaiseAsync(new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"));
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>()).WasNeverCalled();
     }
 
     /// <summary>
@@ -377,14 +391,19 @@ public class PatchTests
     [Test]
     public async Task AlreadyDisposedConnectionDoesNotPreventRefreshCleanup()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(false);
-        connection.SetupRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>())
-            .Throws(new ObjectDisposedException("AutorecoveringConnection"));
+        var connection = IConnection.Mock();
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
+        var unsubscriptions = 0;
+        connection.IsOpen.Returns(false);
+        connection.Events.ConnectionShutdownAsync.OnUnsubscribe(() =>
+        {
+            Interlocked.Increment(ref unsubscriptions);
+            throw new ObjectDisposedException("AutorecoveringConnection");
+        });
         var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var provider = new Mock<ICredentialsProvider>();
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
+        var provider = ICredentialsProvider.Mock();
+        provider.GetCredentialsAsync(Any<CancellationToken>())
             .Returns(async (CancellationToken cancellationToken) =>
             {
                 using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
@@ -394,10 +413,12 @@ public class PatchTests
             });
 
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await registration.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
         await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+        await Assert.That(unsubscriptions).IsEqualTo(1);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
     }
 
     /// <summary>
@@ -407,21 +428,32 @@ public class PatchTests
     [Test]
     public async Task ConcurrentDisposalsWaitForInFlightUpdateAndUnsubscribeOnce()
     {
-        var connection = new Mock<IConnection>();
-        connection.SetupGet(x => x.IsOpen).Returns(true);
+        var connection = IConnection.Mock();
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
+        var unsubscriptions = 0;
+        connection.Events.ConnectionShutdownAsync.OnUnsubscribe(() => Interlocked.Increment(ref unsubscriptions));
+        connection.IsOpen.Returns(true);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.Setup(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, string _, CancellationToken cancellationToken) =>
-            {
-                await using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
-                entered.TrySetResult();
-                await release.Task;
-                cancellationToken.ThrowIfCancellationRequested();
-            });
+        // Для Task без результата версия 1.74.0 поддерживает типизированный Callback,
+        // но фабрика ReturnsAsync не принимает аргументы исходного метода.
+        var pendingUpdate = Task.CompletedTask;
+        connection.UpdateSecretAsync(Any<string>(), Any<string>(), Any<CancellationToken>())
+            .Callback((string _, string _, CancellationToken cancellationToken) => pendingUpdate = UpdateAsync(cancellationToken))
+            .ReturnsAsync(() => pendingUpdate);
+
+        async Task UpdateAsync(CancellationToken cancellationToken)
+        {
+            await using var callback = cancellationToken.Register(() => cancelled.TrySetResult());
+            entered.TrySetResult();
+            await release.Task;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         var provider = Provider("token");
         await using var registration = new RabbitMqCredentialsRefreshRegistration(connection.Object, provider.Object, NullLogger.Instance);
+        await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(1);
 
         try
         {
@@ -431,7 +463,8 @@ public class PatchTests
             await Assert.That(disposals.All(task => !task.IsCompleted)).IsTrue();
             release.TrySetResult();
             await Task.WhenAll(disposals).WaitAsync(TimeSpan.FromSeconds(10));
-            connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
+            await Assert.That(unsubscriptions).IsEqualTo(1);
+            await Assert.That(connection.Events.ConnectionShutdownAsync.SubscriberCount).IsEqualTo(0);
         }
         finally
         {
@@ -447,9 +480,9 @@ public class PatchTests
     /// <returns>Mock, возвращающий заданные credentials при каждом запросе.</returns>
     private static Mock<ICredentialsProvider> Provider(string token, TimeSpan? validUntil = null)
     {
-        var provider = new Mock<ICredentialsProvider>();
-        provider.Setup(x => x.GetCredentialsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Credentials("oauth", "user", token, validUntil ?? TimeSpan.FromMinutes(1)));
+        var provider = ICredentialsProvider.Mock();
+        provider.GetCredentialsAsync(Any<CancellationToken>())
+            .Returns(new Credentials("oauth", "user", token, validUntil ?? TimeSpan.FromMinutes(1)));
         return provider;
     }
 

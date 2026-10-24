@@ -9,17 +9,19 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2;
 internal static class RabbitMqTransportDisposeAsyncPatch
 {
     /// <summary>Отменяет обновление токенов до выполнения DisposeAsync транспорта Wolverine.</summary>
-    /// <param name="__instance">Освобождаемый транспорт.</param>
+    /// <param name="transport">Освобождаемый транспорт.</param>
     /// <remarks>Создаёт остановленный реестр даже для транспорта без соединений, чтобы отклонять поздние регистрации.</remarks>
     [HarmonyPrefix]
-    public static void Prefix(RabbitMqTransport __instance) => RabbitMqRefreshRegistryStore.GetOrCreate(__instance).Cancel();
+    public static void Prefix([HarmonyArgument("__instance")] RabbitMqTransport transport) => RabbitMqRefreshRegistryStore.GetOrCreate(transport).Cancel();
 
     /// <summary>Дополняет результат DisposeAsync транспорта ожиданием освобождения регистраций обновления.</summary>
-    /// <param name="__instance">Освобождаемый транспорт.</param>
-    /// <param name="__result">Исходная операция Wolverine, заменяемая обёрткой освобождения.</param>
+    /// <param name="transport">Освобождаемый транспорт.</param>
+    /// <param name="result">Исходная операция Wolverine, заменяемая обёрткой освобождения.</param>
     [HarmonyPostfix]
-    public static void Postfix(RabbitMqTransport __instance, ref ValueTask __result) =>
-        __result = DisposeAsync(__result, RabbitMqRefreshRegistryStore.GetOrCreate(__instance));
+    public static void Postfix(
+        [HarmonyArgument("__instance")] RabbitMqTransport transport,
+        [HarmonyArgument("__result")] ref ValueTask result) =>
+        result = DisposeAsync(result, RabbitMqRefreshRegistryStore.GetOrCreate(transport));
 
     /// <summary>Ожидает освобождения транспорта и гарантированно запускает освобождение его реестра.</summary>
     /// <param name="original">Исходная операция освобождения транспорта.</param>

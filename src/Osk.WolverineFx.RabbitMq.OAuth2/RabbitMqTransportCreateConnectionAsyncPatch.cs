@@ -10,15 +10,16 @@ namespace Osk.WolverineFx.RabbitMq.OAuth2;
 internal static class RabbitMqTransportCreateConnectionAsyncPatch
 {
     /// <summary>Заменяет задачу создания OAuth2-соединения задачей, которая также регистрирует обновление токенов.</summary>
-    /// <param name="__instance">Транспорт Wolverine, создающий соединение.</param>
-    /// <param name="__result">Исходная задача; для OAuth2 заменяется обёрткой регистрации.</param>
+    /// <param name="transport">Транспорт Wolverine, создающий соединение.</param>
+    /// <param name="result">Исходная задача; для OAuth2 заменяется обёрткой регистрации.</param>
     [HarmonyPostfix]
-    internal static void Postfix(RabbitMqTransport __instance, ref Task<IConnection> __result)
+    internal static void Postfix([HarmonyArgument("__instance")] RabbitMqTransport transport,
+        [HarmonyArgument("__result")] ref Task<IConnection> result)
     {
         // Password-only connections do not have expiring OAuth2 credentials.
-        var provider = __instance.ConnectionFactory?.CredentialsProvider;
+        var provider = transport.ConnectionFactory?.CredentialsProvider;
         if (provider is null or BasicCredentialsProvider) return;
-        __result = RegisterAsync(__result, __instance);
+        result = RegisterAsync(result, transport);
     }
 
     /// <summary>Дожидается создания соединения и регистрирует его в реестре транспорта.</summary>

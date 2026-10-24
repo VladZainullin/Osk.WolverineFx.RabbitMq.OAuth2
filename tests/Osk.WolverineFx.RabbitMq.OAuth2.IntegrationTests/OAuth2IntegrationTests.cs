@@ -106,7 +106,7 @@ public sealed class OAuth2IntegrationTests
     {
         await using var session = await WolverineSession.CreateAsync(Environment, invalidToken: true, cancellationToken: cancellationToken);
         var failure = await Assert.That(async () => await session.StartAsync(cancellationToken)).Throws<Exception>();
-        await Assert.That(ExceptionChain(failure!).Any(e => e is AuthenticationFailureException or PossibleAuthenticationFailureException)).IsTrue();
+        await Assert.That(ExceptionChain(failure!).Any(static e => e is AuthenticationFailureException or PossibleAuthenticationFailureException)).IsTrue();
         await OAuth2Environment.WaitUntilAsync(async () => (await Environment.ConnectionIdsAsync(session.ConnectionName)).Length == 0,
             TimeSpan.FromSeconds(10), cancellationToken);
         await Assert.That(session.Log.Successes).IsEqualTo(0);
@@ -254,8 +254,8 @@ public sealed class OAuth2IntegrationTests
         await session.DisposeAsync();
         // Each worker awaits credentials acquisition and its UpdateSecretAsync callback.
         // Completion therefore proves there is no pending refresh operation or future timer.
-        await Assert.That(refreshers.All(refresher => refresher.Worker.IsCompleted)).IsTrue();
-        await Assert.That(refreshers.All(refresher => !refresher.Connection.IsOpen)).IsTrue();
+        await Assert.That(refreshers.All(static refresher => refresher.Worker.IsCompleted)).IsTrue();
+        await Assert.That(refreshers.All(static refresher => !refresher.Connection.IsOpen)).IsTrue();
         await Assert.That(session.Credentials.ActiveRequests).IsEqualTo(0);
         var requests = session.Credentials.Requests;
         var refreshes = session.Log.Successes;

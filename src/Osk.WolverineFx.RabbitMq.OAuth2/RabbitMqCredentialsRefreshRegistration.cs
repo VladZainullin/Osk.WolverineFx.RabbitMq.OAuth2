@@ -133,7 +133,7 @@ internal sealed class RabbitMqCredentialsRefreshRegistration : IAsyncDisposable
         try { _refresher.Dispose(); }
         // OAuth2 2.0.0 throws an aggregate if cancellation interrupts its delay.
         catch (AggregateException ex) when (_cts.IsCancellationRequested &&
-            ex.Flatten().InnerExceptions.All(e => e is OperationCanceledException))
+            ex.Flatten().InnerExceptions.All(static e => e is OperationCanceledException))
         { }
         finally
         {

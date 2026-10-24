@@ -59,7 +59,7 @@ internal sealed class WolverineSession : IAsyncDisposable
         Credentials = new TrackingCredentialsProvider(
             new OAuth2ClientCredentialsProvider(ConnectionName, oauthClient), invalidToken);
         _host = Host.CreateDefaultBuilder()
-            .UseDefaultServiceProvider(options =>
+            .UseDefaultServiceProvider(static options =>
             {
                 options.ValidateScopes = true;
                 options.ValidateOnBuild = true;
@@ -179,7 +179,7 @@ internal sealed class WolverineSession : IAsyncDisposable
         lock (ReadField<Lock>(registry, "_sync"))
         {
             return ReadField<List<RabbitMqCredentialsRefreshRegistration>>(registry, "_refreshers")
-                .Select(registration => new RefreshDiagnostics(
+                .Select(static registration => new RefreshDiagnostics(
                     ReadField<Task>(ReadField<CredentialsRefresher>(registration, "_refresher"), "_refreshTask"),
                     ReadField<IConnection>(registration, "_connection"))).ToArray();
         }

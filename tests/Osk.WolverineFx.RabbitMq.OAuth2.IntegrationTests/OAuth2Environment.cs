@@ -255,7 +255,7 @@ internal sealed class OAuth2Environment : IAsyncDisposable
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return json.RootElement.EnumerateArray()
             .Where(c => c.GetProperty("client_properties").TryGetProperty("connection_name", out var name) && name.GetString() == connectionName)
-            .Select(c => $"{c.GetProperty("name").GetString()}:{c.GetProperty("connected_at").GetInt64()}")
+            .Select(static c => $"{c.GetProperty("name").GetString()}:{c.GetProperty("connected_at").GetInt64()}")
             .Order().ToArray();
     }
 

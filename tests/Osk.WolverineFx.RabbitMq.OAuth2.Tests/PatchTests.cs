@@ -28,9 +28,9 @@ public class PatchTests
         RabbitMqOAuth2Patches.Install();
         var create = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), "CreateConnectionAsync");
         var dispose = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), nameof(RabbitMqTransport.DisposeAsync));
-        await Assert.That(Harmony.GetPatchInfo(create)!.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
-        await Assert.That(Harmony.GetPatchInfo(dispose)!.Prefixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
-        await Assert.That(Harmony.GetPatchInfo(dispose)!.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
+        await Assert.That(Harmony.GetPatchInfo(create)!.Postfixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
+        await Assert.That(Harmony.GetPatchInfo(dispose)!.Prefixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
+        await Assert.That(Harmony.GetPatchInfo(dispose)!.Postfixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId)).IsEqualTo(1);
     }
 
     /// <summary>
@@ -367,7 +367,7 @@ public class PatchTests
         var provider = ICredentialsProvider.Mock();
         provider.Name.Throws(failure);
         provider.GetCredentialsAsync(Any<CancellationToken>())
-            .Returns(async (CancellationToken cancellationToken) =>
+            .Returns(static async (CancellationToken cancellationToken) =>
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 return new Credentials("oauth", "user", "unused-token", TimeSpan.FromMinutes(1));
@@ -460,7 +460,7 @@ public class PatchTests
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             var disposals = Enumerable.Range(0, 8).Select(_ => registration.DisposeAsync().AsTask()).ToArray();
             await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            await Assert.That(disposals.All(task => !task.IsCompleted)).IsTrue();
+            await Assert.That(disposals.All(static task => !task.IsCompleted)).IsTrue();
             release.TrySetResult();
             await Task.WhenAll(disposals).WaitAsync(TimeSpan.FromSeconds(10));
             await Assert.That(unsubscriptions).IsEqualTo(1);

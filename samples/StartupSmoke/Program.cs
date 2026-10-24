@@ -7,9 +7,9 @@ var create = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), "CreateConnec
 var dispose = AccessTools.DeclaredMethod(typeof(RabbitMqTransport), nameof(RabbitMqTransport.DisposeAsync));
 var createPatches = Harmony.GetPatchInfo(create);
 var disposePatches = Harmony.GetPatchInfo(dispose);
-if (createPatches?.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1 ||
-    disposePatches?.Prefixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1 ||
-    disposePatches?.Postfixes.Count(p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1)
+if (createPatches?.Postfixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1 ||
+    disposePatches?.Prefixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1 ||
+    disposePatches?.Postfixes.Count(static p => p.owner == RabbitMqOAuth2Patches.HarmonyId) != 1)
     throw new InvalidOperationException("Automatic startup did not install both patches.");
 
 Console.WriteLine("PASS: NuGet generator installed both Harmony patches before Main.");

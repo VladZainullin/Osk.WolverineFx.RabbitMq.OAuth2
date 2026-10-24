@@ -76,7 +76,7 @@ internal sealed class RabbitMqRefreshRegistry(ILogger logger)
             _stopping = true;
             var refreshers = _refreshers.ToArray();
             _refreshers.Clear();
-            _disposeTask = Task.WhenAll(refreshers.Select(x => x.DisposeAsync().AsTask()));
+            _disposeTask = Task.WhenAll(refreshers.Select(static x => x.DisposeAsync().AsTask()));
             return _disposeTask;
         }
     }

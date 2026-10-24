@@ -63,7 +63,7 @@ public class MockCompatibilityTests
             Interlocked.Increment(ref attempts);
             throw failure;
         });
-        AsyncEventHandler<ShutdownEventArgs> handler = (_, _) => Task.CompletedTask;
+        AsyncEventHandler<ShutdownEventArgs> handler = static (_, _) => Task.CompletedTask;
         connection.Object.ConnectionShutdownAsync += handler;
 
         var actual = await Assert.That(() => { connection.Object.ConnectionShutdownAsync -= handler; })

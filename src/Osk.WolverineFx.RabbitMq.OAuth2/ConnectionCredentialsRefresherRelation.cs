@@ -31,7 +31,6 @@ internal sealed class ConnectionCredentialsRefresherRelation : IAsyncDisposable
             }
             finally
             {
-                _disposeTask = Task.CompletedTask;
                 _cancellationTokenSource.Dispose();
             }
 

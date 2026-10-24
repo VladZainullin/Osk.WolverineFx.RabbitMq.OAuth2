@@ -17,7 +17,7 @@ internal static class RabbitMqTransportCreateConnectionAsyncPatch
     {
         // Password-only connections do not have expiring OAuth2 credentials.
         var provider = __instance.ConnectionFactory?.CredentialsProvider;
-        if (provider is null || provider is BasicCredentialsProvider) return;
+        if (provider is null or BasicCredentialsProvider) return;
         __result = RegisterAsync(__result, __instance, provider);
     }
 

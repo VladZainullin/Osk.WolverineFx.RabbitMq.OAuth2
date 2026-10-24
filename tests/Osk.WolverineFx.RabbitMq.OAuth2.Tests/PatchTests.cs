@@ -365,8 +365,8 @@ public class PatchTests
         await Assert.That(actual).IsSameReferenceAs(failure);
         connection.VerifyRemove(x => x.ConnectionShutdownAsync -= It.IsAny<AsyncEventHandler<ShutdownEventArgs>>(), Times.Once);
         // Moq returns null when the event has no subscribers after cleanup.
-        await connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
-            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping"));
+        await (connection.RaiseAsync(x => x.ConnectionShutdownAsync += null,
+            connection.Object, new ShutdownEventArgs(ShutdownInitiator.Application, 200, "application stopping")) ?? Task.CompletedTask);
         connection.Verify(x => x.UpdateSecretAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

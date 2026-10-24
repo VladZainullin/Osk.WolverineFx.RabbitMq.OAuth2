@@ -34,7 +34,7 @@ internal static class RabbitMqTransportCreateConnectionAsyncPatch
         var connection = await original.ConfigureAwait(false);
         try
         {
-            RabbitMqRefreshRegistry.For(transport).Register(connection, provider);
+            RabbitMqRefreshRegistryStore.GetOrCreate(transport).Register(connection, provider);
             return connection;
         }
         catch
